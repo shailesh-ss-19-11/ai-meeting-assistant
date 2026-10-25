@@ -52,10 +52,12 @@ function renderMarkdown(text, into) {
 async function askAssistant(task) {
   if (busy || needToken()) return;
   busy = true; message.textContent = 'Generating a suggestion…';
+  const MAX_TASK = 15000;
+  const clipped = task.length > MAX_TASK ? `${task.slice(0, MAX_TASK)}\n[…text truncated: ${task.length - MAX_TASK} more characters not sent]` : task;
   try {
     answer.innerHTML = ''; const p = document.createElement('p'); p.textContent = '';
     const sparkle = document.createElement('span'); sparkle.className = 'sparkle'; sparkle.textContent = '✦'; const thinking = document.createElement('small'); thinking.className = 'thinking'; let gotText = false; let raw = ''; answer.append(sparkle, p, thinking);
-    const response = await fetch(`${API}/api/answer`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ task, context: document.querySelector('#context').value }) });
+    const response = await fetch(`${API}/api/answer`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ task: clipped, context: document.querySelector('#context').value.slice(-12000) }) });
     if (!response.ok) throw new Error(await readError(response, `Assistant request failed (${response.status}).`));
     const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
     while (true) {
@@ -66,7 +68,7 @@ async function askAssistant(task) {
         let data; try { data = JSON.parse(line.slice(6)); } catch { continue; }
         if (data.error) throw new Error(data.error);
         if (data.reasoning) { thinking.textContent += data.reasoning; continue; }
-        raw += data.token || ''; gotText = true; renderMarkdown(raw, p);
+        const stick = answer.scrollHeight - answer.scrollTop - answer.clientHeight < 40; raw += data.token || ''; gotText = true; renderMarkdown(raw, p); if (stick) answer.scrollTop = answer.scrollHeight;
       }
     }
     if (gotText) thinking.remove();
@@ -308,3 +310,5 @@ document.querySelector('#load-models').addEventListener('click', loadModels);
   connectBridge();
   refreshSources();
 })();
+
+document.querySelector('#task').addEventListener('click', () => document.querySelector('#task').classList.toggle('expanded'));
