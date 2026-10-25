@@ -6,3 +6,6 @@
 .hidden{display:none!important}.status.rec{color:#ff6b6b}header{gap:8px}
 input{width:100%;border:1px solid #343849;border-radius:8px;background:#13161f;color:#e9eaf0;padding:10px;font:12px 'DM Sans';outline:none}input:focus{border-color:#766bed}
 .answer p.error{color:#ff8f8f}.answer small.thinking{display:block;color:#6f7585;font-size:10px;white-space:pre-wrap;margin-top:6px}
+:root,button,select,textarea,input{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif!important}h1,h2,.brand strong{font-family:inherit!important}.answer-section{margin-top:0;margin-bottom:18px}.answer{min-height:120px}.answer p{font-size:12.5px}
+.answer{display:block}.answer>.sparkle{float:left;margin-right:10px}.answer p{overflow:hidden}.answer pre{background:#0d0f15;border:1px solid #2a2e3c;border-radius:8px;padding:10px;overflow:auto;margin:8px 0}.answer code{font:11.5px ui-monospace,Menlo,monospace;color:#d7dcff}.answer p strong{color:#fff}
+.answer p,.task-box p,.message,.privacy-note,label,small,footer,.card p{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif!important}

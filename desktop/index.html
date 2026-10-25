@@ -4,13 +4,17 @@
 <body>
   <header><div class="brand"><span class="mark">✦</span><div><strong>Meeting assistant</strong><small>Private workspace</small></div></div><span class="status"><i></i> LOCAL</span><span id="rec-state" class="status rec hidden" role="status">● RECORDING MIC</span><span id="scan-state" class="status rec hidden" role="status">● SCANNING</span></header>
   <main>
-    <section class="intro"><div class="eyebrow">SCREEN TASK RECOGNITION</div><h1>Stay in the flow.</h1><p>Capture a task on screen and get a clear, contextual suggestion.</p></section>
-    <section class="card"><div class="card-heading"><div><h2>AI provider</h2><p>Pick a provider and model, then add your API key. The key is held in memory by the local server only.</p></div><span class="icon">✦</span></div>
+    
+    <section class="answer-section"><div class="answer-title"><div><span class="live-dot"></span><h2>Suggested response</h2></div><button id="clear" class="text-button">Clear</button></div>
+      <div id="task" class="task-box"><span class="tag">DETECTED TASK</span><p id="ocr">Capture a screen to extract its text.</p></div>
+      <div id="answer" class="answer"><span class="sparkle">✦</span><p>Your response will appear here.</p></div>
+    </section>
+    <section class="card"><div class="card-heading"><div><h2>AI provider</h2><p>Pick a provider and model, then add your API key. The key is stored encrypted on this computer.</p></div><span class="icon">✦</span></div>
       <label for="provider">Provider</label><select id="provider"></select>
       <div id="base-row" class="hidden"><label for="base-url">API base URL</label><input id="base-url" placeholder="https://host/v1"></div>
       <label for="model">Model</label><select id="model"></select>
       <input id="model-custom" class="hidden" placeholder="Custom model id" style="margin-top:8px">
-      <label for="api-key">API key</label><input id="api-key" type="password" autocomplete="off" placeholder="Paste key (not saved to disk)">
+      <label for="api-key">API key</label><input id="api-key" type="password" autocomplete="off" placeholder="Paste your API key">
       <div class="actions"><button id="save-provider" class="primary">Save provider <span>✓</span></button><button id="load-models" class="icon-button" title="Load model list from provider">⟳</button></div>
       <p class="privacy-note" id="provider-status">Not configured.</p>
     </section>
@@ -30,10 +34,7 @@
       <div class="transcript-log" id="transcript-log" aria-live="polite"><span>Transcript will appear here while listening.</span></div>
       <button id="spoken-answer" class="secondary hidden">Suggest answer to latest question</button>
     </section>
-    <section class="answer-section"><div class="answer-title"><div><span class="live-dot"></span><h2>Suggested response</h2></div><button id="clear" class="text-button">Clear</button></div>
-      <div id="task" class="task-box"><span class="tag">DETECTED TASK</span><p id="ocr">Capture a screen to extract its text.</p></div>
-      <div id="answer" class="answer"><span class="sparkle">✦</span><p>Your response will appear here.</p></div>
-    </section>
+    
     <div id="message" class="message" role="status"></div>
     <footer><span>⌘ ⇧ Space</span> quick capture <span class="footer-dot">·</span> <span>Ctrl ⇧ Space</span> on Windows/Linux</footer>
   </main>

@@ -36,12 +36,25 @@ async function refreshSources() {
   } catch (error) { message.textContent = error.message; }
 }
 
+// Minimal, DOM-only markdown (code fences, **bold**, `inline`) so model output never becomes HTML.
+function renderMarkdown(text, into) {
+  into.textContent = '';
+  text.split(/```/).forEach((part, i) => {
+    if (i % 2) { const pre = document.createElement('pre'); const code = document.createElement('code'); code.textContent = part.replace(/^[\w+-]*\n/, '').replace(/\n$/, ''); pre.append(code); into.append(pre); return; }
+    part.split(/(\*\*[^*]+\*\*|`[^`]+`)/).forEach(chunk => {
+      if (/^\*\*[^*]+\*\*$/.test(chunk)) { const b = document.createElement('strong'); b.textContent = chunk.slice(2, -2); into.append(b); }
+      else if (/^`[^`]+`$/.test(chunk)) { const c = document.createElement('code'); c.textContent = chunk.slice(1, -1); into.append(c); }
+      else into.append(document.createTextNode(chunk));
+    });
+  });
+}
+
 async function askAssistant(task) {
   if (busy || needToken()) return;
   busy = true; message.textContent = 'Generating a suggestion…';
   try {
     answer.innerHTML = ''; const p = document.createElement('p'); p.textContent = '';
-    const sparkle = document.createElement('span'); sparkle.className = 'sparkle'; sparkle.textContent = '✦'; const thinking = document.createElement('small'); thinking.className = 'thinking'; let gotText = false; answer.append(sparkle, p, thinking);
+    const sparkle = document.createElement('span'); sparkle.className = 'sparkle'; sparkle.textContent = '✦'; const thinking = document.createElement('small'); thinking.className = 'thinking'; let gotText = false; let raw = ''; answer.append(sparkle, p, thinking);
     const response = await fetch(`${API}/api/answer`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ task, context: document.querySelector('#context').value }) });
     if (!response.ok) throw new Error(await readError(response, `Assistant request failed (${response.status}).`));
     const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
@@ -53,7 +66,7 @@ async function askAssistant(task) {
         let data; try { data = JSON.parse(line.slice(6)); } catch { continue; }
         if (data.error) throw new Error(data.error);
         if (data.reasoning) { thinking.textContent += data.reasoning; continue; }
-        p.textContent += data.token || ''; gotText = true;
+        raw += data.token || ''; gotText = true; renderMarkdown(raw, p);
       }
     }
     if (gotText) thinking.remove();
@@ -218,7 +231,7 @@ function onProviderChange(selectedModel) {
   const p = currentProvider();
   document.querySelector('#base-row').classList.toggle('hidden', p.id !== 'custom');
   if (p.id !== 'custom') document.querySelector('#base-url').value = p.baseUrl;
-  document.querySelector('#api-key').placeholder = p.keyless ? 'Not needed for this provider' : 'Paste key (not saved to disk)';
+  document.querySelector('#api-key').placeholder = p.keyless ? 'Not needed for this provider' : 'Paste your API key';
   fillModels(p.models, selectedModel);
   refreshLiveModels(p, selectedModel);
   providerStatus.textContent = p.transcription ? 'Chat and transcription supported.' : 'Chat only: this provider has no transcription model here, so use another provider for the microphone.';
