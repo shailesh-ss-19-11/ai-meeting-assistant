@@ -70,10 +70,17 @@ app.post('/api/config', requireBridgeToken, (req, res) => {
   Object.assign(aiConfig, { baseUrl: baseUrl.replace(/\/$/, ''), model: model.trim(), transcriptionModel: transcriptionModel.trim(), keyless: Boolean(keyless) });
   res.json({ ok: true, hasKey: Boolean(aiConfig.apiKey) });
 });
-app.get('/api/models', requireBridgeToken, async (_req, res) => {
-  if (!providerReady()) return res.status(503).json({ error: 'Save an API key first.' });
+app.get('/api/models', requireBridgeToken, async (req, res) => {
+  // ?baseUrl= previews another provider's public model list; the saved key is only sent to the saved host.
+  let base = aiConfig.baseUrl;
+  if (req.query.baseUrl) {
+    try { const u = new URL(String(req.query.baseUrl)); if (!['http:', 'https:'].includes(u.protocol)) throw new Error(); base = String(req.query.baseUrl).replace(/\/$/, ''); }
+    catch { return res.status(400).json({ error: 'baseUrl must be an http(s) URL.' }); }
+  }
+  const sameHost = new URL(base).origin === new URL(aiConfig.baseUrl).origin;
+  if (!req.query.baseUrl && !providerReady()) return res.status(503).json({ error: 'Save an API key first.' });
   try {
-    const response = await fetch(`${aiConfig.baseUrl}/models`, { headers: providerHeaders(), signal: AbortSignal.timeout(15000) });
+    const response = await fetch(`${base}/models`, { headers: sameHost ? providerHeaders() : {}, signal: AbortSignal.timeout(15000) });
     if (!response.ok) return res.status(response.status).json({ error: `Provider returned ${response.status} when listing models.` });
     const body = await response.json();
     const items = Array.isArray(body.data) ? body.data : Array.isArray(body.models) ? body.models : [];
@@ -119,24 +126,41 @@ app.post('/api/answer', requireBridgeToken, async (req, res) => {
     if (!response.ok) return res.status(response.status).json({ error: `AI provider returned ${response.status}: ${(await response.text()).slice(0, 200)}` });
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let pending = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      pending += decoder.decode(value || new Uint8Array(), { stream: !done });
-      const lines = pending.split('\n');
-      if (done) pending = '';
-      else pending = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
-        try {
-          const token = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content;
-          if (token) res.write(`data: ${JSON.stringify({ token })}\n\n`);
-        } catch { /* ignore incomplete/provider metadata lines */ }
+    const send = payload => res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    let sent = 0;
+    const handleChunk = chunk => {
+      if (chunk.error) { send({ error: String(chunk.error.message || chunk.error).slice(0, 300) }); sent++; return; }
+      const choice = chunk.choices?.[0];
+      const delta = choice?.delta ?? choice?.message ?? {};
+      // Reasoning models (e.g. DeepSeek-R1, Nemotron) may stream their thoughts in a separate field.
+      const reasoning = delta.reasoning_content ?? delta.reasoning;
+      if (typeof delta.content === 'string' && delta.content) { send({ token: delta.content }); sent++; }
+      else if (typeof reasoning === 'string' && reasoning) { send({ reasoning }); sent++; }
+    };
+    if ((response.headers.get('content-type') || '').includes('application/json')) {
+      // Some providers ignore stream:true and return one JSON body.
+      try { handleChunk(await response.json()); } catch { /* reported below */ }
+    } else {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let pending = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        pending += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const lines = pending.split(/\r?\n/);
+        pending = done ? '' : lines.pop();
+        if (done) pending = '';
+        for (const raw of lines) {
+          const line = raw.trim();
+          if (!line.startsWith('data:')) continue;
+          const data = line.slice(5).trim();
+          if (!data || data === '[DONE]') continue;
+          try { handleChunk(JSON.parse(data)); } catch { /* ignore incomplete/provider metadata lines */ }
+        }
+        if (done) break;
       }
-      if (done) break;
     }
+    if (!sent) send({ error: 'The provider returned an empty response. Check that the selected model supports chat completions.' });
     res.end();
   } catch (error) {
     if (!res.headersSent) res.status(502).json({ error: error.message || 'Could not reach AI provider.' });

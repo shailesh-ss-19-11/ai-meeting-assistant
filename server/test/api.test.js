@@ -10,9 +10,15 @@ let server, mock;
 before(async () => {
   mock = http.createServer((req, res) => {
     if (req.url.endsWith('/chat/completions')) {
-      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-      for (const t of ['Hel', 'lo']) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: t } }] })}\n\n`);
-      res.end('data: [DONE]\n\n');
+      let body = ''; req.on('data', c => body += c); req.on('end', () => {
+        const model = JSON.parse(body).model;
+        if (model === 'json-model') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ choices: [{ message: { content: 'whole' } }] })); }
+        if (model === 'empty-model') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); return res.end('data: [DONE]\n\n'); }
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        if (model === 'reason-model') res.write(`data:${JSON.stringify({ choices: [{ delta: { reasoning_content: 'thinking' } }] })}\r\n\r\n`);
+        for (const t of ['Hel', 'lo']) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: t } }] })}\r\n\r\n`);
+        res.end('data: [DONE]\r\n\r\n');
+      });
     } else if (req.url.endsWith('/models')) {
       res.end(JSON.stringify({ data: [{ id: 'm-b' }, { id: 'm-a' }] }));
     } else if (req.url.endsWith('/audio/transcriptions')) {
@@ -75,4 +81,16 @@ test('provider config: save, never leak key, list models, key not reused on new 
   assert.equal(bad.status, 400);
   await fetch(url('/api/config'), { method: 'POST', headers: json, body: JSON.stringify({ baseUrl: 'https://other.example/v1', model: 'x' }) });
   assert.equal((await (await fetch(url('/api/config'), { headers: auth })).json()).hasKey, false);
+});
+
+async function answerWith(model) {
+  const json = { ...auth, 'Content-Type': 'application/json' };
+  await fetch(url('/api/config'), { method: 'POST', headers: json, body: JSON.stringify({ baseUrl: `http://127.0.0.1:${UPSTREAM}`, model, apiKey: 'k' }) });
+  return (await fetch(url('/api/answer'), { method: 'POST', headers: json, body: JSON.stringify({ task: 'x' }) })).text();
+}
+test('handles CRLF streams, reasoning deltas, non-stream JSON and empty replies', async () => {
+  const reason = await answerWith('reason-model');
+  assert.match(reason, /"reasoning":"thinking"/); assert.match(reason, /"Hel"/);
+  assert.match(await answerWith('json-model'), /"token":"whole"/);
+  assert.match(await answerWith('empty-model'), /empty response/);
 });

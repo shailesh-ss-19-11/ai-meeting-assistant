@@ -41,7 +41,7 @@ async function askAssistant(task) {
   busy = true; message.textContent = 'Generating a suggestion…';
   try {
     answer.innerHTML = ''; const p = document.createElement('p'); p.textContent = '';
-    const sparkle = document.createElement('span'); sparkle.className = 'sparkle'; sparkle.textContent = '✦'; answer.append(sparkle, p);
+    const sparkle = document.createElement('span'); sparkle.className = 'sparkle'; sparkle.textContent = '✦'; const thinking = document.createElement('small'); thinking.className = 'thinking'; let gotText = false; answer.append(sparkle, p, thinking);
     const response = await fetch(`${API}/api/answer`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ task, context: document.querySelector('#context').value }) });
     if (!response.ok) throw new Error(await readError(response, `Assistant request failed (${response.status}).`));
     const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
@@ -50,11 +50,15 @@ async function askAssistant(task) {
       buffer += decoder.decode(value, { stream: true });
       const events = buffer.split('\n\n'); buffer = events.pop();
       for (const event of events) for (const line of event.split('\n')) if (line.startsWith('data: ')) {
-        try { p.textContent += JSON.parse(line.slice(6)).token || ''; } catch { /* malformed event */ }
+        let data; try { data = JSON.parse(line.slice(6)); } catch { continue; }
+        if (data.error) throw new Error(data.error);
+        if (data.reasoning) { thinking.textContent += data.reasoning; continue; }
+        p.textContent += data.token || ''; gotText = true;
       }
     }
+    if (gotText) thinking.remove();
     message.textContent = 'Suggestion ready.';
-  } catch (error) { message.textContent = error.message; }
+  } catch (error) { message.textContent = error.message; answer.innerHTML = ''; const err = document.createElement('p'); err.className = 'error'; err.textContent = `Could not get a suggestion: ${error.message}`; answer.append(err); }
   finally { busy = false; }
 }
 
@@ -216,11 +220,26 @@ function onProviderChange(selectedModel) {
   if (p.id !== 'custom') document.querySelector('#base-url').value = p.baseUrl;
   document.querySelector('#api-key').placeholder = p.keyless ? 'Not needed for this provider' : 'Paste key (not saved to disk)';
   fillModels(p.models, selectedModel);
+  refreshLiveModels(p, selectedModel);
   providerStatus.textContent = p.transcription ? 'Chat and transcription supported.' : 'Chat only: this provider has no transcription model here, so use another provider for the microphone.';
 }
 window.PROVIDERS.forEach(p => providerSel.append(new Option(p.name, p.id)));
 providerSel.addEventListener('change', () => onProviderChange());
 modelSel.addEventListener('change', () => modelCustom.classList.toggle('hidden', modelSel.value !== CUSTOM));
+
+// Preset model names go stale, so try to replace them with the provider's live list (silent on failure).
+async function refreshLiveModels(p, selectedModel) {
+  if (p.id === 'custom' || !p.baseUrl || !document.querySelector('#bridge-token').value) return;
+  try {
+    const response = await fetch(`${API}/api/models?baseUrl=${encodeURIComponent(p.baseUrl)}`, { headers: authHeaders() });
+    if (!response.ok || providerSel.value !== p.id) return;
+    const { models } = await response.json();
+    if (!models?.length) return;
+    // Presets that still exist come first; the rest of the live list follows.
+    const ordered = [...p.models.filter(m => models.includes(m)), ...models.filter(m => !p.models.includes(m))];
+    fillModels(ordered, selectedModel && ordered.includes(selectedModel) ? selectedModel : ordered[0]);
+  } catch { /* offline or key required: keep presets */ }
+}
 
 async function saveProvider() {
   if (needToken()) return false;
