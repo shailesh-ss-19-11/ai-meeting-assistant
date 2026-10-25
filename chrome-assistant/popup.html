@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Meeting Live Assistant</title>
+<style>
+:root{color-scheme:light dark}
+body{font:13px -apple-system,system-ui,sans-serif;width:300px;margin:0;padding:14px;background:#f4f5fb;color:#111}
+@media (prefers-color-scheme:dark){body{background:#151722;color:#eee}input,select{background:#202331!important;border-color:#393d4b!important;color:#fff!important}}
+h1{font-size:15px;margin:0 0 4px}p{margin:0 0 8px;font-size:12px;opacity:.7;line-height:1.45}
+label{display:block;font-size:11px;font-weight:600;margin:10px 0 4px}
+input,select{box-sizing:border-box;width:100%;padding:9px;border-radius:8px;border:1px solid #c8cbe0;background:#fff;font:inherit}
+button{margin-top:12px;width:100%;padding:10px;border:0;border-radius:8px;background:#6d5fe8;color:#fff;font:600 13px inherit;cursor:pointer}
+button.secondary{background:transparent;color:inherit;border:1px solid #9aa0c0;margin-top:8px}
+#status{min-height:16px;margin-top:10px;font-size:12px}
+</style></head><body>
+<h1>Meeting Live Assistant</h1>
+<p>Open your meeting tab, paste one Groq key, press Start. It hears the other side and shows what to say.</p>
+<label for="key">Groq API key</label><input id="key" type="password" autocomplete="off" placeholder="gsk_…">
+<label for="model">Model</label><select id="model"><option>openai/gpt-oss-120b</option><option>openai/gpt-oss-20b</option><option>qwen/qwen3.8-27b</option></select>
+<button id="start">Save &amp; start on this tab</button>
+<button id="stop" class="secondary">Stop</button>
+<p id="status" role="status"></p>
+<script src="popup.js"></script></body></html>

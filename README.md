@@ -52,3 +52,13 @@ In the desktop app's **AI provider** card pick a provider (27 presets including 
 - **First OCR is slow or fails offline**: it downloads English language data once, then caches it.
 - **Shortcut does nothing**: another app owns it; use the button.
 - **Extension "Failed to fetch"**: the server isn't running, or Chrome blocked local network access; allow it.
+
+## Standalone Chrome extension (`chrome-assistant/`)
+
+Works without the desktop app, also on Windows. It hears the other side of a call in the current tab, transcribes it with Groq Whisper and shows a suggested reply in a floating panel on the page. One Groq key is all it needs.
+
+1. Chrome → `chrome://extensions` → Developer mode → **Load unpacked** → select `chrome-assistant/`.
+2. Open the meeting tab, click the extension icon, paste your Groq key and press **Save & start on this tab**.
+3. Use **Pause / Start** and **✕** on the panel. The key is stored in `chrome.storage.local` (not encrypted).
+
+The panel lives inside the page, so sharing that tab shows it to others; share a different window or tab to keep it private. It does not read the screen.

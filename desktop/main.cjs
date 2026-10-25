@@ -93,12 +93,15 @@ app.whenReady().then(async () => {
     callback(Boolean(isAssistant(webContents) && permission === 'media' && audioOnly));
   });
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => isAssistant(webContents) && permission === 'media');
+  // No Dock icon, so the app is not visible there while sharing the screen; the windows stay reachable by shortcut.
+  app.dock?.hide();
   bridgeToken = loadToken();
   await startServer();
   await restoreProvider();
   createWindow();
   createOverlay();
   globalShortcut.register('CommandOrControl+Shift+O', toggleOverlay);
+  globalShortcut.register('CommandOrControl+Shift+M', () => { if (!win || win.isDestroyed()) createWindow(); else if (win.isVisible() && win.isFocused()) win.hide(); else { win.show(); win.focus(); } });
   const registered = globalShortcut.register('CommandOrControl+Shift+Space', () => win?.webContents.send('capture-shortcut'));
   win.webContents.once('did-finish-load', () => { if (!registered) win.webContents.send('shortcut-unavailable'); });
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });

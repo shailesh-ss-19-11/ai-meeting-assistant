@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Meeting Live Assistant",
+  "version": "0.1.0",
+  "description": "Listens to the other side of a call in this tab and suggests what to say, using your own Groq API key.",
+  "permissions": ["tabCapture", "offscreen", "storage", "activeTab", "scripting"],
+  "host_permissions": ["https://api.groq.com/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Meeting Live Assistant", "default_popup": "popup.html" }
+}
