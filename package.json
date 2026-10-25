@@ -1,0 +1,11 @@
+{
+  "name": "ai-meeting-assistant",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix desktop install",
+    "server": "npm --prefix server run dev",
+    "desktop": "npm --prefix desktop start",
+    "test": "npm --prefix server test"
+  },
+  "engines": { "node": ">=20" }
+}

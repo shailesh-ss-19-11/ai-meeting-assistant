@@ -1,0 +1,31 @@
+// Presets for OpenAI-compatible APIs. Model lists are suggestions; after saving a key the app fetches the
+// provider's live model list, and "Custom…" accepts any model id.
+window.PROVIDERS = [
+  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', transcription: 'gpt-4o-mini-transcribe', models: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-mini', 'o4-mini'] },
+  { id: 'anthropic', name: 'Anthropic (Claude)', baseUrl: 'https://api.anthropic.com/v1', transcription: '', models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'] },
+  { id: 'gemini', name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', transcription: '', models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'] },
+  { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', transcription: 'whisper-large-v3-turbo', models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3-32b', 'moonshotai/kimi-k2-instruct'] },
+  { id: 'mistral', name: 'Mistral', baseUrl: 'https://api.mistral.ai/v1', transcription: '', models: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest', 'codestral-latest', 'ministral-8b-latest', 'pixtral-large-latest'] },
+  { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', transcription: '', models: ['deepseek-chat', 'deepseek-reasoner'] },
+  { id: 'xai', name: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1', transcription: '', models: ['grok-4', 'grok-3', 'grok-3-mini', 'grok-code-fast-1'] },
+  { id: 'openrouter', name: 'OpenRouter (300+ models)', baseUrl: 'https://openrouter.ai/api/v1', transcription: '', models: ['openai/gpt-5', 'openai/gpt-4o', 'anthropic/claude-sonnet-4', 'google/gemini-2.5-pro', 'google/gemini-2.5-flash', 'meta-llama/llama-3.3-70b-instruct', 'deepseek/deepseek-chat', 'x-ai/grok-4', 'qwen/qwen3-coder', 'mistralai/mistral-large'] },
+  { id: 'together', name: 'Together AI', baseUrl: 'https://api.together.xyz/v1', transcription: '', models: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'deepseek-ai/DeepSeek-V3', 'deepseek-ai/DeepSeek-R1', 'Qwen/Qwen2.5-Coder-32B-Instruct', 'Qwen/Qwen3-235B-A22B-fp8-tput'] },
+  { id: 'fireworks', name: 'Fireworks AI', baseUrl: 'https://api.fireworks.ai/inference/v1', transcription: '', models: ['accounts/fireworks/models/llama-v3p3-70b-instruct', 'accounts/fireworks/models/deepseek-v3', 'accounts/fireworks/models/qwen3-coder-480b-a35b-instruct'] },
+  { id: 'cerebras', name: 'Cerebras', baseUrl: 'https://api.cerebras.ai/v1', transcription: '', models: ['llama-3.3-70b', 'llama3.1-8b', 'qwen-3-32b', 'gpt-oss-120b'] },
+  { id: 'sambanova', name: 'SambaNova', baseUrl: 'https://api.sambanova.ai/v1', transcription: '', models: ['Meta-Llama-3.3-70B-Instruct', 'DeepSeek-V3-0324', 'Qwen3-32B'] },
+  { id: 'deepinfra', name: 'DeepInfra', baseUrl: 'https://api.deepinfra.com/v1/openai', transcription: '', models: ['meta-llama/Llama-3.3-70B-Instruct', 'deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct'] },
+  { id: 'perplexity', name: 'Perplexity', baseUrl: 'https://api.perplexity.ai', transcription: '', models: ['sonar', 'sonar-pro', 'sonar-reasoning', 'sonar-reasoning-pro'] },
+  { id: 'cohere', name: 'Cohere', baseUrl: 'https://api.cohere.ai/compatibility/v1', transcription: '', models: ['command-a-03-2025', 'command-r-plus', 'command-r', 'command-r7b-12-2024'] },
+  { id: 'nvidia', name: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1', transcription: '', models: ['meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct', 'deepseek-ai/deepseek-r1'] },
+  { id: 'hyperbolic', name: 'Hyperbolic', baseUrl: 'https://api.hyperbolic.xyz/v1', transcription: '', models: ['meta-llama/Llama-3.3-70B-Instruct', 'deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-Coder-32B-Instruct'] },
+  { id: 'nebius', name: 'Nebius AI Studio', baseUrl: 'https://api.studio.nebius.com/v1', transcription: '', models: ['meta-llama/Llama-3.3-70B-Instruct', 'deepseek-ai/DeepSeek-V3-0324', 'Qwen/Qwen3-235B-A22B'] },
+  { id: 'novita', name: 'Novita AI', baseUrl: 'https://api.novita.ai/v3/openai', transcription: '', models: ['meta-llama/llama-3.3-70b-instruct', 'deepseek/deepseek-v3-0324', 'qwen/qwen3-235b-a22b-fp8'] },
+  { id: 'huggingface', name: 'Hugging Face Inference', baseUrl: 'https://router.huggingface.co/v1', transcription: '', models: ['meta-llama/Llama-3.3-70B-Instruct', 'Qwen/Qwen2.5-Coder-32B-Instruct', 'deepseek-ai/DeepSeek-V3'] },
+  { id: 'github', name: 'GitHub Models', baseUrl: 'https://models.github.ai/inference', transcription: '', models: ['openai/gpt-4.1', 'openai/gpt-4o', 'meta/Llama-3.3-70B-Instruct', 'deepseek/DeepSeek-V3-0324'] },
+  { id: 'moonshot', name: 'Moonshot (Kimi)', baseUrl: 'https://api.moonshot.ai/v1', transcription: '', models: ['kimi-k2-0905-preview', 'moonshot-v1-128k', 'moonshot-v1-32k'] },
+  { id: 'qwen', name: 'Alibaba Qwen (DashScope)', baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', transcription: '', models: ['qwen-max', 'qwen-plus', 'qwen-turbo', 'qwen3-coder-plus'] },
+  { id: 'zhipu', name: 'Zhipu GLM (Z.ai)', baseUrl: 'https://api.z.ai/api/paas/v4', transcription: '', models: ['glm-4.6', 'glm-4.5', 'glm-4.5-air'] },
+  { id: 'ollama', name: 'Ollama (local, no key)', baseUrl: 'http://127.0.0.1:11434/v1', transcription: '', keyless: true, models: ['llama3.2', 'llama3.3', 'qwen2.5-coder', 'deepseek-r1', 'mistral', 'gemma3'] },
+  { id: 'lmstudio', name: 'LM Studio (local, no key)', baseUrl: 'http://127.0.0.1:1234/v1', transcription: '', keyless: true, models: [] },
+  { id: 'custom', name: 'Custom (OpenAI-compatible)', baseUrl: '', transcription: '', models: [] }
+];
