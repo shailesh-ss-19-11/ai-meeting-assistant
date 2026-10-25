@@ -1,5 +1,5 @@
-const { app, BrowserWindow, globalShortcut, desktopCapturer, dialog, ipcMain, safeStorage, session, systemPreferences } = require('electron');
-const { fork } = require('node:child_process');
+const { app, BrowserWindow, screen, globalShortcut, desktopCapturer, dialog, ipcMain, safeStorage, session, systemPreferences } = require('electron');
+const { fork, spawn } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -7,6 +7,8 @@ const { createWorker } = require('tesseract.js');
 
 const PORT = 8787;
 let win;
+let overlay;
+let overlayState = { voice: {}, screen: {} };
 let serverProcess;
 let bridgeToken;
 let serverError = '';
@@ -53,9 +55,33 @@ function createWindow() {
     title: 'Meeting Assistant', backgroundColor: '#10131a',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
+  // Excluded from screen sharing/recording so meeting participants cannot see this window.
+  win.setContentProtection(true);
   win.loadFile(path.join(__dirname, 'index.html'));
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
+}
+
+// Small always-on-top frosted panel with the question and the suggested reply. Like the main window it is
+// excluded from screen sharing, so only the user sees it.
+function createOverlay() {
+  const { workArea } = screen.getPrimaryDisplay();
+  overlay = new BrowserWindow({ width: 900, height: 480, minWidth: 560, minHeight: 280, x: workArea.x + workArea.width - 920, y: workArea.y + 20,
+    frame: false, transparent: true, hasShadow: false, resizable: true, show: false, skipTaskbar: true,
+    webPreferences: { preload: path.join(__dirname, 'preload-overlay.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  overlay.setContentProtection(true);
+  overlay.setAlwaysOnTop(true, 'screen-saver');
+  overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  overlay.loadFile(path.join(__dirname, 'overlay.html'));
+  overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  overlay.webContents.on('will-navigate', event => event.preventDefault());
+  overlay.webContents.once('did-finish-load', () => { overlay.webContents.send('overlay-listening', overlayListening); for (const channel of ['voice', 'screen']) overlay.webContents.send('overlay-update', { channel, ...overlayState[channel] }); overlay.showInactive(); });
+  overlay.on('closed', () => { overlay = null; });
+}
+function toggleOverlay() {
+  if (!overlay || overlay.isDestroyed()) return createOverlay();
+  if (overlay.isVisible()) overlay.hide(); else overlay.showInactive();
 }
 
 const isAssistant = webContents => Boolean(win && !win.isDestroyed() && webContents && webContents.id === win.webContents.id);
@@ -71,12 +97,31 @@ app.whenReady().then(async () => {
   await startServer();
   await restoreProvider();
   createWindow();
+  createOverlay();
+  globalShortcut.register('CommandOrControl+Shift+O', toggleOverlay);
   const registered = globalShortcut.register('CommandOrControl+Shift+Space', () => win?.webContents.send('capture-shortcut'));
   win.webContents.once('did-finish-load', () => { if (!registered) win.webContents.send('shortcut-unavailable'); });
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
 app.on('will-quit', () => { serverProcess?.kill(); globalShortcut.unregisterAll(); ocrWorker?.terminate().catch(() => {}); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+
+let overlayListening = false;
+ipcMain.on('overlay-toggle-listening', event => { if (overlay && !overlay.isDestroyed() && event.sender.id === overlay.webContents.id) win?.webContents.send('toggle-listening'); });
+ipcMain.on('overlay-listening', (event, on) => {
+  if (!isAssistant(event.sender)) return;
+  overlayListening = Boolean(on);
+  if (overlay && !overlay.isDestroyed()) overlay.webContents.send('overlay-listening', overlayListening);
+});
+ipcMain.on('overlay-close', event => { if (overlay && !overlay.isDestroyed() && event.sender.id === overlay.webContents.id) overlay.hide(); });
+ipcMain.on('overlay-capture', event => { if (overlay && !overlay.isDestroyed() && event.sender.id === overlay.webContents.id) win?.webContents.send('capture-shortcut'); });
+ipcMain.on('overlay-update', (event, state) => {
+  if (!isAssistant(event.sender) || !state || typeof state !== 'object') return;
+  const text = value => (typeof value === 'string' ? value.slice(0, 20000) : '');
+  const channel = state.channel === 'screen' ? 'screen' : 'voice';
+  overlayState = { ...overlayState, [channel]: { question: text(state.question), answer: text(state.answer), state: text(state.state), error: text(state.error) } };
+  if (overlay && !overlay.isDestroyed()) overlay.webContents.send('overlay-update', { channel, ...overlayState[channel] });
+});
 
 function senderAllowed(event) { return isAssistant(event.sender); }
 function handle(channel, fn) {
@@ -96,7 +141,7 @@ handle('capture-source', async sourceId => {
   if (process.platform === 'darwin' && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
     throw new Error('Screen Recording permission is not granted. Enable it for Electron in System Settings → Privacy & Security → Screen Recording, then restart the app.');
   }
-  const source = (await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 2200, height: 1400 } })).find(item => item.id === sourceId);
+  const source = (await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 3200, height: 2000 } })).find(item => item.id === sourceId);
   if (!source) throw new Error('Capture source is no longer available. Refresh the list.');
   if (source.thumbnail.isEmpty()) throw new Error('The capture was empty. Check Screen Recording permission or pick another source.');
   return source.thumbnail.toDataURL();
@@ -117,22 +162,76 @@ handle('recognize-text', image => {
   return job;
 });
 
-handle('request-microphone', async () => {
-  if (process.platform !== 'darwin') return true;
-  const status = systemPreferences.getMediaAccessStatus('microphone');
-  return status === 'granted' || (status === 'not-determined' && await systemPreferences.askForMediaAccess('microphone'));
+// System audio (the other side of a call) is captured by a small native helper and transcribed in 8-second chunks.
+let sysAudio = null;
+function wavFrom(pcm) {
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVEfmt ', 8); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22); header.writeUInt32LE(16000, 24); header.writeUInt32LE(32000, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34);
+  header.write('data', 36); header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
+}
+function rms(pcm) {
+  let sum = 0; const n = Math.floor(pcm.length / 2);
+  for (let i = 0; i < n; i++) { const v = pcm.readInt16LE(i * 2); sum += v * v; }
+  return n ? Math.sqrt(sum / n) : 0;
+}
+async function transcribeChunk(pcm) {
+  if (rms(pcm) < 120) return; // silence: skip (also avoids Whisper hallucinating "Thank you.")
+  const form = new FormData();
+  form.append('audio', new Blob([wavFrom(pcm)], { type: 'audio/wav' }), 'them.wav');
+  const response = await fetch(`http://127.0.0.1:${PORT}/api/transcribe`, { method: 'POST', headers: { Authorization: `Bearer ${bridgeToken}` }, body: form });
+  const body = await response.json().catch(() => ({}));
+  if (process.env.SYSAUDIO_DEBUG) fs.appendFileSync(path.join(app.getPath('userData'), 'audio-debug.log'), `transcribe status=${response.status} ${JSON.stringify(body).slice(0, 200)}\n`);
+  if (!response.ok) return win?.webContents.send('system-audio-status', body.error || `Transcription failed (${response.status}).`);
+  if (body.text?.trim()) win?.webContents.send('system-transcript', body.text.trim());
+}
+function stopSystemAudio() {
+  if (!sysAudio) return;
+  clearInterval(sysAudio.timer); clearTimeout(sysAudio.watchdog); sysAudio.child.kill(); sysAudio = null;
+}
+handle('start-system-audio', () => {
+  if (sysAudio) return true;
+  if (process.platform !== 'darwin') throw new Error('System audio capture is only implemented for macOS.');
+  const helper = path.join(__dirname, 'native', 'sysaudio');
+  if (!fs.existsSync(helper)) throw new Error('Native audio helper is missing. Run "npm run build:native" in the desktop folder.');
+  const child = spawn(helper, [], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const state = { child, chunks: [], received: 0, timer: null, watchdog: null };
+  sysAudio = state;
+  child.stdout.on('data', data => { state.chunks.push(data); state.received += data.length; });
+  child.stderr.on('data', data => { const text = String(data).trim(); if (/failed|stopped/.test(text)) win?.webContents.send('system-audio-status', `System audio: ${text}`); });
+  child.on('exit', () => { if (sysAudio === state) { stopSystemAudio(); win?.webContents.send('system-audio-status', 'System audio stopped.'); } });
+  // Cut the audio where the speaker pauses (so sentences stay whole), or after 15 s of continuous speech.
+  const BYTES_PER_SECOND = 32000;
+  state.timer = setInterval(() => {
+    const buffered = Buffer.concat(state.chunks.splice(0)); state.chunks.push(buffered);
+    if (buffered.length < 3 * BYTES_PER_SECOND) return;
+    const paused = rms(buffered.subarray(buffered.length - Math.floor(0.7 * BYTES_PER_SECOND))) < 150;
+    if (!paused && buffered.length < 15 * BYTES_PER_SECOND) return;
+    state.chunks.length = 0;
+    if (process.env.SYSAUDIO_DEBUG) fs.appendFileSync(path.join(app.getPath('userData'), 'audio-debug.log'), `${new Date().toISOString()} bytes=${buffered.length} rms=${Math.round(rms(buffered))}\n`);
+    transcribeChunk(buffered).catch(error => win?.webContents.send('system-audio-status', error.message));
+  }, 500);
+  state.watchdog = setTimeout(() => { if (!state.received) win?.webContents.send('system-audio-status', 'No system audio received. Allow audio recording for Electron (System Settings → Privacy & Security → Screen & System Audio Recording) and make sure sound is playing.'); }, 6000);
+  return true;
 });
+handle('stop-system-audio', () => { stopSystemAudio(); return true; });
+app.on('will-quit', stopSystemAudio);
 
 // Native confirmation so consent cannot be skipped by page script.
 const CONSENT = {
-  transcription: { message: 'Start microphone transcription?', detail: 'The microphone will be recorded in 8-second segments and each segment is sent to your configured external AI provider for transcription. Make sure everyone in the meeting has agreed to this. Recording stays on until you click Stop.' },
-  periodic: { message: 'Enable periodic screen scanning?', detail: 'Every 15 seconds the selected screen or window will be captured and read locally. When the text changes, it is sent to your configured external AI provider to generate a suggestion. Scanning stays on until you turn it off.' }
+  system: { message: 'Transcribe the other side of the call?', detail: 'System audio (what plays through your speakers, such as other meeting participants) is captured in 8-second segments and sent to your configured external AI provider for transcription. Make sure everyone in the meeting has agreed. It stays on until you click Stop.' }
 };
 handle('confirm', async kind => {
   const entry = CONSENT[kind];
   if (!entry) return false;
+  // Consent is asked once and remembered, so listening can start by itself on later launches.
+  const settings = readSettings();
+  if (settings.consent?.[kind]) return true;
   const { response } = await dialog.showMessageBox(win, { type: 'question', buttons: ['Cancel', 'Allow'], defaultId: 0, cancelId: 0, ...entry });
-  return response === 1;
+  if (response !== 1) return false;
+  writeSettings({ ...settings, consent: { ...settings.consent, [kind]: true } });
+  return true;
 });
 
 handle('app-state', () => {

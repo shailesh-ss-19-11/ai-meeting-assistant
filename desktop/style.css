@@ -14,3 +14,8 @@ input{width:100%;border:1px solid #343849;border-radius:8px;background:#13161f;c
 .task-box{cursor:pointer}.task-box p{max-height:54px;overflow:hidden;transition:max-height .15s}.task-box.expanded p{max-height:34vh;overflow:auto}
 .task-box .hint{color:#6f7585;font-size:9px;margin-left:6px}
 .answer{max-height:calc(100vh - 250px);overflow:auto;scroll-behavior:auto}
+
+/* Replies live in the overlay now; keep the in-window copy from covering the settings below it. */
+.answer-section{position:static;margin-bottom:14px}.answer{max-height:180px}
+
+.advanced summary{cursor:pointer;font-weight:600;font-size:12px}.advanced[open] summary{margin-bottom:10px}.advanced textarea{width:100%}#listen-state{color:#7ee0a6}

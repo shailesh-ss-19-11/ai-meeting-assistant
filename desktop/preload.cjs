@@ -3,10 +3,16 @@ contextBridge.exposeInMainWorld('assistant', {
   listSources: () => ipcRenderer.invoke('list-sources'),
   captureSource: id => ipcRenderer.invoke('capture-source', id),
   recognizeText: image => ipcRenderer.invoke('recognize-text', image),
-  requestMicrophone: () => ipcRenderer.invoke('request-microphone'),
   confirm: kind => ipcRenderer.invoke('confirm', kind),
   appState: () => ipcRenderer.invoke('app-state'),
   rememberProvider: config => ipcRenderer.invoke('remember-provider', config),
+  startSystemAudio: () => ipcRenderer.invoke('start-system-audio'),
+  stopSystemAudio: () => ipcRenderer.invoke('stop-system-audio'),
+  onSystemTranscript: callback => ipcRenderer.on('system-transcript', (_e, text) => callback(text)),
+  onSystemAudioStatus: callback => ipcRenderer.on('system-audio-status', (_e, text) => callback(text)),
+  overlayListening: on => ipcRenderer.send('overlay-listening', on),
+  onToggleListening: callback => ipcRenderer.on('toggle-listening', () => callback()),
+  overlayUpdate: state => ipcRenderer.send('overlay-update', state),
   onCaptureShortcut: callback => ipcRenderer.on('capture-shortcut', () => callback()),
   onShortcutUnavailable: callback => ipcRenderer.on('shortcut-unavailable', () => callback())
 });

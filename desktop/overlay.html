@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'"><title>Assistant overlay</title><link rel="stylesheet" href="overlay.css"></head>
+<body>
+  <div class="water"><i></i><i></i><i></i></div>
+  <header><span class="grip">✦ Live assistant</span><span class="tools"><button id="listen" title="Pause or start listening to the call">⏸ Pause</button> <button id="capture" title="Read the whole screen now and answer">Capture screen</button> <button id="close" title="Hide this window (Cmd+Shift+O shows it again)">✕</button></span></header>
+  <div class="panes">
+    <article class="pane" id="voice">
+      <div class="pane-head"><h2>🎙 Voice</h2><span class="state">Listening…</span></div>
+      <h3>Heard</h3><p class="question">Nothing heard yet.</p>
+      <h3>Say this</h3><div class="answer">Replies to what the other person says appear here.</div>
+    </article>
+    <article class="pane" id="screen">
+      <div class="pane-head"><h2>🖥 Screen</h2><span class="state">Idle</span></div>
+      <h3>On screen</h3><p class="question">Click Capture screen to read your whole screen.</p>
+      <h3>Answer</h3><div class="answer">The answer for what is on your screen appears here.</div>
+    </article>
+  </div>
+  <script src="overlay.js"></script>
+</body>
+</html>

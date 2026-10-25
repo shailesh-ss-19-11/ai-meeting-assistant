@@ -2,41 +2,27 @@
 <html lang="en">
 <head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src http://127.0.0.1:8787"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Meeting Assistant</title><link rel="stylesheet" href="style.css"></head>
 <body>
-  <header><div class="brand"><span class="mark">✦</span><div><strong>Meeting assistant</strong><small>Private workspace</small></div></div><span class="status"><i></i> LOCAL</span><span id="rec-state" class="status rec hidden" role="status">● RECORDING MIC</span><span id="scan-state" class="status rec hidden" role="status">● SCANNING</span></header>
+  <header><div class="brand"><span class="mark">✦</span><div><strong>Meeting assistant</strong><small>Private workspace</small></div></div><span id="listen-state" class="status hidden" role="status"><i></i> LISTENING</span></header>
   <main>
-    
-    <section class="answer-section"><div class="answer-title"><div><span class="live-dot"></span><h2>Suggested response</h2></div><button id="clear" class="text-button">Clear</button></div>
-      <div id="task" class="task-box"><span class="tag">DETECTED TASK</span> <small class="hint">click to expand / collapse</small><p id="ocr">Capture a screen to extract its text.</p></div>
-      <div id="answer" class="answer"><span class="sparkle">✦</span><p>Your response will appear here.</p></div>
-    </section>
-    <section class="card"><div class="card-heading"><div><h2>AI provider</h2><p>Pick a provider and model, then add your API key. The key is stored encrypted on this computer.</p></div><span class="icon">✦</span></div>
-      <label for="provider">Provider</label><select id="provider"></select>
+    <section class="card"><div class="card-heading"><div><h2>Setup</h2><p>Pick the AI, the model and paste one API key. Listening to the call starts by itself.</p></div><span class="icon">✦</span></div>
+      <label for="provider">AI</label><select id="provider"></select>
       <div id="base-row" class="hidden"><label for="base-url">API base URL</label><input id="base-url" placeholder="https://host/v1"></div>
       <label for="model">Model</label><select id="model"></select>
       <input id="model-custom" class="hidden" placeholder="Custom model id" style="margin-top:8px">
       <label for="api-key">API key</label><input id="api-key" type="password" autocomplete="off" placeholder="Paste your API key">
-      <div class="actions"><button id="save-provider" class="primary">Save provider <span>✓</span></button><button id="load-models" class="icon-button" title="Load model list from provider">⟳</button></div>
+      <div class="actions"><button id="save-provider" class="primary">Save &amp; start <span>✓</span></button></div>
       <p class="privacy-note" id="provider-status">Not configured.</p>
     </section>
-    <section class="card capture-card"><div class="card-heading"><div><h2>Screen capture</h2><p>OCR runs on this device. Extracted text is sent to your AI provider when a suggestion is generated.</p></div><span class="icon">▣</span></div>
-      <label for="source">Capture source</label><select id="source"><option value="">Choose a screen or window…</option></select>
-      <div class="actions"><button id="capture" class="primary">Capture &amp; analyze <span>↗</span></button><button id="refresh" class="icon-button" title="Refresh sources">↻</button></div>
-      <label class="toggle-row"><span><b>Periodic scanning</b><small>Analyze this source every 15 seconds</small></span><input type="checkbox" id="auto"><i class="switch"></i></label>
-      <div id="preview" class="preview hidden"></div>
-    </section>
-    <section class="card"><div class="card-heading"><div><h2>Meeting context</h2><p>Paste recent notes or transcript snippets.</p></div><span class="icon">☷</span></div><textarea id="context" rows="3" placeholder="e.g. We decided to use PostgreSQL…"></textarea>
-      <details class="bridge-settings"><summary>Chrome extension (optional)</summary><p class="privacy-note">Paste this token in the extension popup to sync notes. It is generated automatically.</p><input id="bridge-token" type="password" readonly><div class="bridge-row"><button id="copy-token" class="text-button">Copy token</button><span id="bridge-status">Starting…</span></div></details>
-    </section>
-    <section class="card"><div class="card-heading"><div><h2>Live transcription</h2><p>Transcribe microphone audio in short segments.</p></div><span class="icon">◉</span></div>
-      <label for="microphone">Microphone</label><select id="microphone"><option value="">Default microphone</option></select>
-      <button id="transcribe" class="secondary">Start transcription</button>
-      <p class="privacy-note">When started, microphone audio is sent to your configured AI provider for transcription. Get consent from everyone before recording. Audio segments are not saved by this app.</p>
+    <section class="card"><div class="card-heading"><div><h2>Heard on the call</h2><p>Replies appear in the floating assistant window. Use its Capture screen button to read the screen.</p></div><span class="icon">◉</span></div>
       <div class="transcript-log" id="transcript-log" aria-live="polite"><span>Transcript will appear here while listening.</span></div>
-      <button id="spoken-answer" class="secondary hidden">Suggest answer to latest question</button>
     </section>
-    
+    <details class="card advanced"><summary>Advanced</summary>
+      <label for="context">Meeting notes (used as context)</label><textarea id="context" rows="3" placeholder="e.g. We decided to use PostgreSQL…"></textarea>
+      <label for="bridge-token">Chrome extension token (optional)</label><input id="bridge-token" type="password" readonly>
+      <div class="bridge-row"><button id="copy-token" class="text-button">Copy token</button><span id="bridge-status">Starting…</span></div>
+    </details>
     <div id="message" class="message" role="status"></div>
-    <footer><span>⌘ ⇧ Space</span> quick capture <span class="footer-dot">·</span> <span>Ctrl ⇧ Space</span> on Windows/Linux</footer>
+    <footer><span>⌘ ⇧ Space</span> capture screen <span class="footer-dot">·</span> <span>⌘ ⇧ O</span> show/hide assistant window</footer>
   </main>
   <script src="providers.js"></script><script src="renderer.js"></script>
 </body></html>

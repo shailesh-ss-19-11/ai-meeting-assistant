@@ -90,8 +90,8 @@ app.get('/api/models', requireBridgeToken, async (req, res) => {
 });
 app.post('/api/transcribe', requireBridgeToken, (req, res, next) => audioUpload.single('audio')(req, res, err => err ? res.status(400).json({ error: err.message }) : next()), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'An audio segment is required.' });
-  if (!providerReady()) return res.status(503).json({ error: 'Save an API key in the AI provider card first.' });
-  if (!aiConfig.transcriptionModel) return res.status(400).json({ error: 'This provider has no transcription model configured.' });
+  if (!providerReady()) return res.status(503).json({ error: 'Save an API key in the Setup card first.' });
+  if (!aiConfig.transcriptionModel) return res.status(400).json({ error: 'This provider has no speech-to-text. Choose Groq (one key for chat and voice).' });
   try {
     const form = new FormData();
     form.append('file', new Blob([req.file.buffer], { type: req.file.mimetype || 'audio/webm' }), req.file.originalname || 'meeting.webm');
@@ -107,7 +107,7 @@ app.post('/api/transcribe', requireBridgeToken, (req, res, next) => audioUpload.
   }
 });
 app.post('/api/answer', requireBridgeToken, async (req, res) => {
-  const { task, context = '' } = req.body ?? {};
+  const { task, context = '', spoken = false } = req.body ?? {};
   if (typeof task !== 'string' || !task.trim()) return res.status(400).json({ error: 'Task text is required.' });
   if (task.length > 20000 || typeof context !== 'string' || context.length > 12000) return res.status(413).json({ error: 'Input is too long.' });
   if (!providerReady()) return res.status(503).json({ error: 'Save an API key in the AI provider card first.' });
@@ -119,8 +119,10 @@ app.post('/api/answer', requireBridgeToken, async (req, res) => {
       method: 'POST', signal: upstream.signal,
       headers: providerHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ model: aiConfig.model, stream: true, messages: [
-        { role: 'system', content: 'You are a concise meeting assistant. Help reason through the user-provided task. State assumptions and explain code or answers clearly.' },
-        { role: 'user', content: `Recent meeting context:\n${context || '(none provided)'}\n\nTask detected from screen:\n${task}` }
+        { role: 'system', content: spoken
+          ? 'You are speaking in a live meeting on the user\'s behalf. The other person just said something. Reply to it directly, in first person, in 2-4 short natural spoken sentences the user can read out loud. No headings, no preamble.'
+          : 'You are a concise meeting assistant. Help reason through the user-provided task. State assumptions and explain code or answers clearly.' },
+        { role: 'user', content: spoken ? `Recent conversation:\n${context || '(none)'}\n\nThe other person just said:\n${task}` : `Recent meeting context:\n${context || '(none provided)'}\n\nTask detected from screen:\n${task}` }
       ] })
     });
     if (!response.ok) return res.status(response.status).json({ error: `AI provider returned ${response.status}: ${(await response.text()).slice(0, 200)}` });

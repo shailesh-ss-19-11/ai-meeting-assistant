@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "main": "main.cjs",
-  "scripts": { "start": "electron ." },
+  "scripts": { "start": "electron .", "build:native": "swiftc -O native/sysaudio.swift -o native/sysaudio" },
   "dependencies": { "tesseract.js": "^6.0.1" },
   "devDependencies": { "electron": "^34.1.1" }
 }

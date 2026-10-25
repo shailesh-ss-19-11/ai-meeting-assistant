@@ -1,17 +1,10 @@
-const sourceSelect = document.querySelector('#source');
-const ocrOutput = document.querySelector('#ocr');
-const answer = document.querySelector('#answer');
 const message = document.querySelector('#message');
-const preview = document.querySelector('#preview');
-let timer;
-let busy = false;
-let microphoneStream;
-let listening = false;
-let recorder;
+const busy = { voice: false, screen: false };
 let transcriptText = '';
-let uploadQueue = Promise.resolve();
 let bridgePoller;
 let lastBridgeUpdate = null;
+let pendingSpoken = null;
+let listening = false;
 
 const API = 'http://127.0.0.1:8787';
 const authHeaders = () => ({ Authorization: `Bearer ${document.querySelector('#bridge-token').value.trim()}` });
@@ -20,44 +13,24 @@ async function readError(response, fallback) {
 }
 function needToken() {
   if (document.querySelector('#bridge-token').value.trim()) return false;
-  message.textContent = 'Enter the BRIDGE_TOKEN from server/.env first (Meeting context card).';
+  message.textContent = 'The app is still starting. Try again in a moment.';
   return true;
 }
 
-async function refreshSources() {
-  try {
-    const sources = await window.assistant.listSources();
-    sourceSelect.innerHTML = '<option value="">Choose a screen or window…</option>';
-    sources.forEach(source => {
-      const option = document.createElement('option'); option.value = source.id; option.textContent = source.name;
-      sourceSelect.append(option);
-    });
-    message.textContent = sources.length ? '' : 'No capture sources found.';
-  } catch (error) { message.textContent = error.message; }
-}
+const pushOverlay = (channel, state) => window.assistant.overlayUpdate({ channel, ...state });
 
-// Minimal, DOM-only markdown (code fences, **bold**, `inline`) so model output never becomes HTML.
-function renderMarkdown(text, into) {
-  into.textContent = '';
-  text.split(/```/).forEach((part, i) => {
-    if (i % 2) { const pre = document.createElement('pre'); const code = document.createElement('code'); code.textContent = part.replace(/^[\w+-]*\n/, '').replace(/\n$/, ''); pre.append(code); into.append(pre); return; }
-    part.split(/(\*\*[^*]+\*\*|`[^`]+`)/).forEach(chunk => {
-      if (/^\*\*[^*]+\*\*$/.test(chunk)) { const b = document.createElement('strong'); b.textContent = chunk.slice(2, -2); into.append(b); }
-      else if (/^`[^`]+`$/.test(chunk)) { const c = document.createElement('code'); c.textContent = chunk.slice(1, -1); into.append(c); }
-      else into.append(document.createTextNode(chunk));
-    });
-  });
-}
-
-async function askAssistant(task) {
-  if (busy || needToken()) return;
-  busy = true; message.textContent = 'Generating a suggestion…';
+// ---- Replies (shown only in the floating assistant window) ----
+async function askAssistant(task, { spoken = false } = {}) {
+  const channel = spoken ? 'voice' : 'screen';
+  if (busy[channel] || needToken()) return;
+  busy[channel] = true;
   const MAX_TASK = 15000;
   const clipped = task.length > MAX_TASK ? `${task.slice(0, MAX_TASK)}\n[…text truncated: ${task.length - MAX_TASK} more characters not sent]` : task;
+  const question = task.length > 600 ? `${task.slice(0, 600)}…` : task;
+  pushOverlay(channel, { question, answer: '', state: 'Thinking…' });
+  let raw = '';
   try {
-    answer.innerHTML = ''; const p = document.createElement('p'); p.textContent = '';
-    const sparkle = document.createElement('span'); sparkle.className = 'sparkle'; sparkle.textContent = '✦'; const thinking = document.createElement('small'); thinking.className = 'thinking'; let gotText = false; let raw = ''; answer.append(sparkle, p, thinking);
-    const response = await fetch(`${API}/api/answer`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ task: clipped, context: document.querySelector('#context').value.slice(-12000) }) });
+    const response = await fetch(`${API}/api/answer`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ task: clipped, spoken, context: document.querySelector('#context').value.slice(-12000) }) });
     if (!response.ok) throw new Error(await readError(response, `Assistant request failed (${response.status}).`));
     const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
     while (true) {
@@ -67,47 +40,73 @@ async function askAssistant(task) {
       for (const event of events) for (const line of event.split('\n')) if (line.startsWith('data: ')) {
         let data; try { data = JSON.parse(line.slice(6)); } catch { continue; }
         if (data.error) throw new Error(data.error);
-        if (data.reasoning) { thinking.textContent += data.reasoning; continue; }
-        const stick = answer.scrollHeight - answer.scrollTop - answer.clientHeight < 40; raw += data.token || ''; gotText = true; renderMarkdown(raw, p); if (stick) answer.scrollTop = answer.scrollHeight;
+        if (data.reasoning) continue;
+        raw += data.token || ''; pushOverlay(channel, { question, answer: raw, state: 'Writing…' });
       }
     }
-    if (gotText) thinking.remove();
-    message.textContent = 'Suggestion ready.';
-  } catch (error) { message.textContent = error.message; answer.innerHTML = ''; const err = document.createElement('p'); err.className = 'error'; err.textContent = `Could not get a suggestion: ${error.message}`; answer.append(err); }
-  finally { busy = false; }
+    pushOverlay(channel, { question, answer: raw, state: 'Ready' });
+  } catch (error) { pushOverlay(channel, { question, error: `Could not get a suggestion: ${error.message}`, state: 'Error' }); message.textContent = error.message; }
+  finally { busy[channel] = false; }
 }
 
-let lastScanText = '';
-async function captureAndAnswer({ periodic = false } = {}) {
-  if (busy) return;
-  if (!sourceSelect.value) { message.textContent = 'Choose a screen or window first.'; return; }
-  busy = true; message.textContent = 'Capturing and reading screen…';
+// Whatever the other side says gets a reply; only the newest unanswered line is kept while one is in flight.
+async function queueSpokenAnswer(text) {
+  if (busy.voice) { pendingSpoken = text; return; }
+  await askAssistant(text, { spoken: true });
+  if (pendingSpoken) { const next = pendingSpoken; pendingSpoken = null; queueSpokenAnswer(next); }
+}
+
+// ---- Screen capture (only when the user asks, via the overlay button or the shortcut) ----
+async function captureAndAnswer() {
+  if (busy.screen) return;
+  busy.screen = true; pushOverlay('screen', { question: 'Reading your whole screen…', answer: '', state: 'Capturing…' });
+  let text = '';
   try {
-    const image = await window.assistant.captureSource(sourceSelect.value);
-    preview.innerHTML = ''; const img = document.createElement('img'); img.src = image; preview.append(img); preview.classList.remove('hidden');
-    const text = (await window.assistant.recognizeText(image)).trim();
-    if (!text) throw new Error('No readable text found. Try selecting a closer window.');
-    if (periodic && text === lastScanText) { message.textContent = 'Screen unchanged; skipped.'; return; }
-    lastScanText = text;
-    ocrOutput.textContent = text;
-    busy = false;
-    await askAssistant(text);
-  } catch (error) { message.textContent = error.message; }
-  finally { busy = false; }
+    const sources = await window.assistant.listSources();
+    const source = sources.find(s => s.id.startsWith('screen:')) || sources[0];
+    if (!source) throw new Error('No screen found to capture.');
+    const image = await window.assistant.captureSource(source.id);
+    text = (await window.assistant.recognizeText(image)).trim();
+    if (!text) throw new Error('No readable text found on the screen.');
+  } catch (error) { pushOverlay('screen', { question: 'Screen capture', error: error.message, state: 'Error' }); busy.screen = false; return; }
+  busy.screen = false;
+  await askAssistant(text);
 }
+window.assistant.onCaptureShortcut(() => captureAndAnswer());
+window.assistant.onShortcutUnavailable(() => { message.textContent = 'The capture shortcut is in use by another app; use the assistant window button instead.'; });
 
+// ---- Listening to the call (system audio), started automatically ----
 function appendTranscript(text) {
   const context = document.querySelector('#context');
   context.value = `${context.value}${context.value ? '\n' : ''}${text}`.slice(-12000);
   transcriptText = `${transcriptText}${transcriptText ? '\n' : ''}${text}`.slice(-3000);
-  document.querySelector('#transcript-log').textContent = transcriptText;
-  document.querySelector('#transcript-log').scrollTop = document.querySelector('#transcript-log').scrollHeight;
-  if (/[?？]/.test(text) || /\b(what|why|how|when|where|who|which|could you|can you|would you|should we)\b/i.test(text)) {
-    ocrOutput.textContent = `Spoken question: ${text}`;
-    document.querySelector('#spoken-answer').classList.remove('hidden');
-  }
+  const log = document.querySelector('#transcript-log');
+  log.textContent = transcriptText; log.scrollTop = log.scrollHeight;
+}
+window.assistant.onSystemTranscript(text => {
+  appendTranscript(`Them: ${text}`);
+  if (text.split(/\s+/).length >= 3) queueSpokenAnswer(text);
+});
+window.assistant.onSystemAudioStatus(text => { message.textContent = text; });
+
+async function startListening() {
+  if (listening || needToken()) return;
+  try {
+    if (!(await window.assistant.confirm('system'))) { message.textContent = 'Listening is off because consent was declined.'; return; }
+    await window.assistant.startSystemAudio();
+    listening = true; window.assistant.overlayListening(true); document.querySelector('#listen-state').classList.remove('hidden');
+    message.textContent = 'Listening to the call. Replies appear in the assistant window.';
+  } catch (error) { message.textContent = error.message; }
+}
+async function stopListening() {
+  if (!listening) return;
+  await window.assistant.stopSystemAudio(); listening = false; pendingSpoken = null; window.assistant.overlayListening(false);
+  document.querySelector('#listen-state').classList.add('hidden');
 }
 
+window.assistant.onToggleListening(() => { if (listening) stopListening(); else if (currentProvider().transcription) startListening(); else message.textContent = 'This provider has no speech-to-text. Choose Groq.'; });
+
+// ---- Chrome extension bridge ----
 async function pollBridge() {
   const token = document.querySelector('#bridge-token').value.trim();
   if (!token) return;
@@ -122,97 +121,9 @@ async function pollBridge() {
     }
   } catch (error) { document.querySelector('#bridge-status').textContent = error.message; clearInterval(bridgePoller); }
 }
-
-function connectBridge() {
-  const input = document.querySelector('#bridge-token');
-  clearInterval(bridgePoller);
-  pollBridge();
-  bridgePoller = setInterval(pollBridge, 3000);
-}
-
-async function uploadAudio(blob) {
-  if (!blob.size) return;
-  const form = new FormData(); form.append('audio', blob, `meeting-${Date.now()}.webm`);
-  const response = await fetch(`${API}/api/transcribe`, { method: 'POST', headers: authHeaders(), body: form });
-  if (!response.ok) throw new Error(await readError(response, `Transcription failed (${response.status}).`));
-  const result = await response.json();
-  if (result.text?.trim()) appendTranscript(result.text.trim());
-}
-
-function startAudioSegment() {
-  if (!listening || !microphoneStream) return;
-  const parts = [];
-  try {
-    const current = new MediaRecorder(microphoneStream);
-    recorder = current;
-    current.ondataavailable = event => { if (event.data.size) parts.push(event.data); };
-    current.onstop = () => {
-      const blob = new Blob(parts, { type: current.mimeType || 'audio/webm' });
-      if (listening) startAudioSegment();
-      else { microphoneStream?.getTracks().forEach(track => track.stop()); microphoneStream = null; }
-      uploadQueue = uploadQueue.then(() => uploadAudio(blob)).catch(error => { message.textContent = error.message; });
-    };
-    current.start();
-    setTimeout(() => { if (current.state === 'recording') current.stop(); }, 8000);
-  } catch (error) { message.textContent = error.message; stopTranscription(); }
-}
-
-async function stopTranscription() {
-  listening = false;
-  const button = document.querySelector('#transcribe');
-  button.textContent = 'Start transcription'; button.classList.remove('recording');
-  document.querySelector('#rec-state').classList.add('hidden');
-  if (recorder?.state === 'recording') recorder.stop();
-  else { microphoneStream?.getTracks().forEach(track => track.stop()); microphoneStream = null; }
-}
-
-async function toggleTranscription() {
-  if (listening) return stopTranscription();
-  if (needToken()) return;
-  try {
-    if (!(await window.assistant.confirm('transcription'))) return;
-    if (!(await window.assistant.requestMicrophone())) throw new Error('Microphone permission is not enabled for this app.');
-    const selected = document.querySelector('#microphone').value;
-    microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: selected ? { deviceId: { exact: selected } } : true, video: false });
-    listening = true;
-    document.querySelector('#transcribe').textContent = 'Stop transcription';
-    document.querySelector('#transcribe').classList.add('recording');
-    message.textContent = 'Listening. Audio is transcribed in 8-second segments.';
-    document.querySelector('#rec-state').classList.remove('hidden');
-    startAudioSegment();
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const microphone = document.querySelector('#microphone'); const current = microphone.value;
-    microphone.innerHTML = '<option value="">Default microphone</option>';
-    devices.filter(device => device.kind === 'audioinput').forEach(device => {
-      const option = document.createElement('option'); option.value = device.deviceId; option.textContent = device.label || 'Microphone'; microphone.append(option);
-    });
-    microphone.value = current;
-  } catch (error) { message.textContent = error.message; await stopTranscription(); }
-}
-
-document.querySelector('#capture').addEventListener('click', () => captureAndAnswer());
-document.querySelector('#refresh').addEventListener('click', refreshSources);
-document.querySelector('#transcribe').addEventListener('click', toggleTranscription);
-document.querySelector('#spoken-answer').addEventListener('click', () => askAssistant(ocrOutput.textContent.replace(/^Spoken question: /, '')));
+function connectBridge() { clearInterval(bridgePoller); pollBridge(); bridgePoller = setInterval(pollBridge, 3000); }
 document.querySelector('#copy-token').addEventListener('click', async () => { await navigator.clipboard.writeText(document.querySelector('#bridge-token').value); document.querySelector('#bridge-status').textContent = 'Token copied. Paste it into the extension popup.'; });
-document.querySelector('#clear').addEventListener('click', () => { ocrOutput.textContent = 'Capture a screen to extract its text.'; answer.innerHTML = '<span class="sparkle">✦</span><p>Your response will appear here.</p>'; preview.classList.add('hidden'); document.querySelector('#spoken-answer').classList.add('hidden'); message.textContent = ''; });
-async function scanLoop() {
-  if (!document.querySelector('#auto').checked) return;
-  await captureAndAnswer({ periodic: true });
-  if (document.querySelector('#auto').checked) timer = setTimeout(scanLoop, 15000);
-}
-document.querySelector('#auto').addEventListener('change', async event => {
-  clearTimeout(timer);
-  const badge = document.querySelector('#scan-state');
-  if (!event.target.checked) { badge.classList.add('hidden'); return; }
-  if (!sourceSelect.value) { event.target.checked = false; message.textContent = 'Choose a screen or window first.'; return; }
-  if (!(await window.assistant.confirm('periodic'))) { event.target.checked = false; return; }
-  badge.classList.remove('hidden'); lastScanText = '';
-  scanLoop();
-});
-window.assistant.onCaptureShortcut(() => captureAndAnswer());
-window.assistant.onShortcutUnavailable(() => { message.textContent = 'The keyboard shortcut is in use by another app; use the button instead.'; });
-window.addEventListener('beforeunload', () => { listening = false; microphoneStream?.getTracks().forEach(track => track.stop()); });
+
 // ---- AI provider selection ----
 const providerSel = document.querySelector('#provider');
 const modelSel = document.querySelector('#model');
@@ -236,10 +147,10 @@ function onProviderChange(selectedModel) {
   document.querySelector('#api-key').placeholder = p.keyless ? 'Not needed for this provider' : 'Paste your API key';
   fillModels(p.models, selectedModel);
   refreshLiveModels(p, selectedModel);
-  providerStatus.textContent = p.transcription ? 'Chat and transcription supported.' : 'Chat only: this provider has no transcription model here, so use another provider for the microphone.';
+  providerStatus.textContent = p.transcription ? 'Chat and listening supported with one key.' : 'This provider has no speech-to-text, so it cannot listen to the call. Choose Groq to use one key for everything.';
 }
 window.PROVIDERS.forEach(p => providerSel.append(new Option(p.name, p.id)));
-providerSel.addEventListener('change', () => onProviderChange());
+providerSel.addEventListener('change', () => { onProviderChange(); stopListening(); });
 modelSel.addEventListener('change', () => modelCustom.classList.toggle('hidden', modelSel.value !== CUSTOM));
 
 // Preset model names go stale, so try to replace them with the provider's live list (silent on failure).
@@ -250,12 +161,14 @@ async function refreshLiveModels(p, selectedModel) {
     if (!response.ok || providerSel.value !== p.id) return;
     const { models } = await response.json();
     if (!models?.length) return;
-    // Presets that still exist come first; the rest of the live list follows.
     const ordered = [...p.models.filter(m => models.includes(m)), ...models.filter(m => !p.models.includes(m))];
     fillModels(ordered, selectedModel && ordered.includes(selectedModel) ? selectedModel : ordered[0]);
   } catch { /* offline or key required: keep presets */ }
 }
 
+async function currentConfig() {
+  try { const r = await fetch(`${API}/api/config`, { headers: authHeaders() }); return r.ok ? await r.json() : null; } catch { return null; }
+}
 async function saveProvider() {
   if (needToken()) return false;
   const p = currentProvider();
@@ -263,7 +176,7 @@ async function saveProvider() {
   const key = document.querySelector('#api-key').value.trim();
   const baseUrl = document.querySelector('#base-url').value.trim();
   if (!baseUrl) { providerStatus.textContent = 'Enter the API base URL.'; return false; }
-  if (!model) { providerStatus.textContent = 'Choose or enter a model (or use ⟳ to load the list after saving a key).'; return false; }
+  if (!model) { providerStatus.textContent = 'Choose or enter a model.'; return false; }
   if (!key && !p.keyless && !(await currentConfig())?.hasKey) { providerStatus.textContent = 'Paste your API key.'; return false; }
   try {
     const response = await fetch(`${API}/api/config`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -271,31 +184,15 @@ async function saveProvider() {
     if (!response.ok) throw new Error(await readError(response, 'Could not save provider.'));
     document.querySelector('#api-key').value = '';
     const { remembered } = await window.assistant.rememberProvider({ id: p.id, model, baseUrl, transcription: p.transcription, keyless: Boolean(p.keyless), apiKey: key || undefined });
-    providerStatus.textContent = `Saved: ${p.name} · ${model}${remembered ? ' (remembered, key encrypted on this computer)' : ' (key kept in memory only)'}. Content you analyze is sent to this provider.`;
+    providerStatus.textContent = `Saved: ${p.name} · ${model}${remembered ? ' (key encrypted on this computer)' : ' (key kept in memory only)'}.`;
     return true;
   } catch (error) { providerStatus.textContent = error.message; return false; }
 }
-
-async function fetchLiveModels() {
-  const response = await fetch(`${API}/api/models`, { headers: authHeaders() });
-  if (!response.ok) throw new Error(await readError(response, 'Could not load models.'));
-  const { models } = await response.json();
-  if (!models.length) throw new Error('Provider returned no models.');
-  fillModels(models, modelSel.value === CUSTOM ? modelCustom.value : modelSel.value);
-  return models.length;
-}
-
-async function loadModels() {
+document.querySelector('#save-provider').addEventListener('click', async () => {
   if (!(await saveProvider())) return;
-  try { providerStatus.textContent = `Loaded ${await fetchLiveModels()} models from the provider. Pick one and Save again.`; }
-  catch (error) { providerStatus.textContent = `${error.message} You can still pick a listed model or Custom….`; }
-}
-
-async function currentConfig() {
-  try { const r = await fetch(`${API}/api/config`, { headers: authHeaders() }); return r.ok ? await r.json() : null; } catch { return null; }
-}
-document.querySelector('#save-provider').addEventListener('click', async () => { if (await saveProvider()) fetchLiveModels().catch(() => {}); });
-document.querySelector('#load-models').addEventListener('click', loadModels);
+  await stopListening();
+  if (currentProvider().transcription) startListening();
+});
 
 (async () => {
   const state = await window.assistant.appState();
@@ -306,9 +203,9 @@ document.querySelector('#load-models').addEventListener('click', loadModels);
   providerSel.value = p.id;
   onProviderChange(saved?.model);
   if (saved?.baseUrl && p.id === 'custom') document.querySelector('#base-url').value = saved.baseUrl;
-  providerStatus.textContent = saved ? (saved.hasKey || saved.keyless ? `Ready: ${p.name} · ${saved.model}.` : 'Paste your API key and click Save provider.') : 'Choose a provider and model, paste your key, then Save provider.';
+  const ready = saved && (saved.hasKey || saved.keyless);
+  if (ready) providerStatus.textContent = `Ready: ${p.name} · ${saved.model}.`;
+  else providerStatus.textContent = 'Choose the AI and model, paste your key, then Save & start.';
   connectBridge();
-  refreshSources();
+  if (ready && p.transcription) startListening();
 })();
-
-document.querySelector('#task').addEventListener('click', () => document.querySelector('#task').classList.toggle('expanded'));

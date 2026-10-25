@@ -1,0 +1,25 @@
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:transparent;overflow:hidden;color:#000;font:13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif}
+body{position:relative;display:flex;flex-direction:column;border-radius:14px;border:1px solid rgba(255,255,255,.5);background:rgba(255,255,255,.5);backdrop-filter:blur(16px) saturate(1.4)}
+/* Near-transparent glass: a white glow behind the black text keeps it readable over any content. */
+body *{text-shadow:0 0 3px rgba(255,255,255,.8)}
+/* Slow drifting blobs behind the text give the frosted "water" look. */
+.water{position:absolute;inset:0;overflow:hidden;z-index:-1;border-radius:inherit}
+.water i{position:absolute;width:260px;height:260px;border-radius:50%;filter:blur(44px);opacity:.4;animation:drift 14s ease-in-out infinite alternate}
+.water i:nth-child(1){background:#7fd1ff;left:-60px;top:-40px}
+.water i:nth-child(2){background:#b9a6ff;right:-80px;top:40%;animation-duration:18s}
+.water i:nth-child(3){background:#8ff0d0;left:20%;bottom:-120px;animation-duration:22s}
+@keyframes drift{to{transform:translate(70px,50px) scale(1.25)}}
+header{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;-webkit-app-region:drag;cursor:grab;font-weight:700;border-bottom:1px solid rgba(0,0,0,.12);user-select:none}
+button{-webkit-app-region:no-drag;font:600 11px -apple-system,system-ui,sans-serif;color:#000;background:rgba(255,255,255,.7);border:1px solid rgba(0,0,0,.25);border-radius:7px;padding:3px 9px;cursor:pointer}button:active{background:rgba(255,255,255,.95)}
+.panes{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr}
+.pane{min-width:0;min-height:0;display:flex;flex-direction:column;padding:8px 14px 12px}
+.pane+.pane{border-left:1px solid rgba(0,0,0,.14)}
+.pane-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+h2{margin:0;font-size:13px}.state{font-weight:600;font-size:11px;opacity:.7}
+h3{margin:6px 0 2px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;opacity:.65}
+.question{margin:0;max-height:96px;overflow:auto;font-weight:600}
+.answer{flex:1;min-height:0;overflow:auto;white-space:pre-wrap;font-size:14px}
+.answer pre{background:rgba(255,255,255,.6);border:1px solid rgba(0,0,0,.15);border-radius:8px;padding:8px;overflow:auto;white-space:pre}
+.answer code{font:12px ui-monospace,Menlo,monospace}
+.error{color:#7a0000}
