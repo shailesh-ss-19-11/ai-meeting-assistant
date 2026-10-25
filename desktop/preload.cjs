@@ -5,7 +5,8 @@ contextBridge.exposeInMainWorld('assistant', {
   recognizeText: image => ipcRenderer.invoke('recognize-text', image),
   requestMicrophone: () => ipcRenderer.invoke('request-microphone'),
   confirm: kind => ipcRenderer.invoke('confirm', kind),
-  localBridgeToken: () => ipcRenderer.invoke('local-bridge-token'),
+  appState: () => ipcRenderer.invoke('app-state'),
+  rememberProvider: config => ipcRenderer.invoke('remember-provider', config),
   onCaptureShortcut: callback => ipcRenderer.on('capture-shortcut', () => callback()),
   onShortcutUnavailable: callback => ipcRenderer.on('shortcut-unavailable', () => callback())
 });

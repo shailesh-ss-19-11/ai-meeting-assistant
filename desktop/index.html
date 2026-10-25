@@ -21,7 +21,7 @@
       <div id="preview" class="preview hidden"></div>
     </section>
     <section class="card"><div class="card-heading"><div><h2>Meeting context</h2><p>Paste recent notes or transcript snippets.</p></div><span class="icon">☷</span></div><textarea id="context" rows="3" placeholder="e.g. We decided to use PostgreSQL…"></textarea>
-      <div class="bridge-settings"><label for="bridge-token">Extension bridge token</label><input id="bridge-token" type="password" autocomplete="off" placeholder="Set BRIDGE_TOKEN from server/.env"><div class="bridge-row"><button id="connect-bridge" class="text-button">Connect extension</button><span id="bridge-status">Not connected</span></div></div>
+      <details class="bridge-settings"><summary>Chrome extension (optional)</summary><p class="privacy-note">Paste this token in the extension popup to sync notes. It is generated automatically.</p><input id="bridge-token" type="password" readonly><div class="bridge-row"><button id="copy-token" class="text-button">Copy token</button><span id="bridge-status">Starting…</span></div></details>
     </section>
     <section class="card"><div class="card-heading"><div><h2>Live transcription</h2><p>Transcribe microphone audio in short segments.</p></div><span class="icon">◉</span></div>
       <label for="microphone">Microphone</label><select id="microphone"><option value="">Default microphone</option></select>

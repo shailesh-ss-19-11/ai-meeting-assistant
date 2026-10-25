@@ -5,7 +5,10 @@
     "install:all": "npm --prefix server install && npm --prefix desktop install",
     "server": "npm --prefix server run dev",
     "desktop": "npm --prefix desktop start",
-    "test": "npm --prefix server test"
+    "test": "npm --prefix server test",
+    "start": "npm --prefix desktop start"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

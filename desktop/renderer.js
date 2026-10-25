@@ -106,7 +106,6 @@ async function pollBridge() {
 
 function connectBridge() {
   const input = document.querySelector('#bridge-token');
-  localStorage.setItem('bridgeToken', input.value.trim());
   clearInterval(bridgePoller);
   pollBridge();
   bridgePoller = setInterval(pollBridge, 3000);
@@ -176,7 +175,7 @@ document.querySelector('#capture').addEventListener('click', () => captureAndAns
 document.querySelector('#refresh').addEventListener('click', refreshSources);
 document.querySelector('#transcribe').addEventListener('click', toggleTranscription);
 document.querySelector('#spoken-answer').addEventListener('click', () => askAssistant(ocrOutput.textContent.replace(/^Spoken question: /, '')));
-document.querySelector('#connect-bridge').addEventListener('click', connectBridge);
+document.querySelector('#copy-token').addEventListener('click', async () => { await navigator.clipboard.writeText(document.querySelector('#bridge-token').value); document.querySelector('#bridge-status').textContent = 'Token copied. Paste it into the extension popup.'; });
 document.querySelector('#clear').addEventListener('click', () => { ocrOutput.textContent = 'Capture a screen to extract its text.'; answer.innerHTML = '<span class="sparkle">✦</span><p>Your response will appear here.</p>'; preview.classList.add('hidden'); document.querySelector('#spoken-answer').classList.add('hidden'); message.textContent = ''; });
 async function scanLoop() {
   if (!document.querySelector('#auto').checked) return;
@@ -195,13 +194,6 @@ document.querySelector('#auto').addEventListener('change', async event => {
 window.assistant.onCaptureShortcut(() => captureAndAnswer());
 window.assistant.onShortcutUnavailable(() => { message.textContent = 'The keyboard shortcut is in use by another app; use the button instead.'; });
 window.addEventListener('beforeunload', () => { listening = false; microphoneStream?.getTracks().forEach(track => track.stop()); });
-(async () => {
-  const field = document.querySelector('#bridge-token');
-  field.value = localStorage.getItem('bridgeToken') || await window.assistant.localBridgeToken();
-  if (field.value) connectBridge();
-})();
-refreshSources();
-
 // ---- AI provider selection ----
 const providerSel = document.querySelector('#provider');
 const modelSel = document.querySelector('#model');
@@ -244,8 +236,8 @@ async function saveProvider() {
       body: JSON.stringify({ baseUrl, model, apiKey: key || undefined, transcriptionModel: p.transcription, keyless: Boolean(p.keyless) }) });
     if (!response.ok) throw new Error(await readError(response, 'Could not save provider.'));
     document.querySelector('#api-key').value = '';
-    try { localStorage.setItem('provider', JSON.stringify({ id: p.id, model, baseUrl })); } catch { /* ignore */ }
-    providerStatus.textContent = `Saved: ${p.name} · ${model}. Content you analyze is sent to this provider.`;
+    const { remembered } = await window.assistant.rememberProvider({ id: p.id, model, baseUrl, transcription: p.transcription, keyless: Boolean(p.keyless), apiKey: key || undefined });
+    providerStatus.textContent = `Saved: ${p.name} · ${model}${remembered ? ' (remembered, key encrypted on this computer)' : ' (key kept in memory only)'}. Content you analyze is sent to this provider.`;
     return true;
   } catch (error) { providerStatus.textContent = error.message; return false; }
 }
@@ -272,13 +264,15 @@ document.querySelector('#save-provider').addEventListener('click', async () => {
 document.querySelector('#load-models').addEventListener('click', loadModels);
 
 (async () => {
-  let saved = null;
-  try { saved = JSON.parse(localStorage.getItem('provider')); } catch { /* ignore */ }
+  const state = await window.assistant.appState();
+  document.querySelector('#bridge-token').value = state.token;
+  if (state.serverError) { message.textContent = state.serverError; return; }
+  const saved = state.provider;
   const p = window.PROVIDERS.find(x => x.id === saved?.id) || window.PROVIDERS[0];
   providerSel.value = p.id;
   onProviderChange(saved?.model);
   if (saved?.baseUrl && p.id === 'custom') document.querySelector('#base-url').value = saved.baseUrl;
-  await new Promise(r => setTimeout(r, 400)); // let the token prefill finish
-  const cfg = document.querySelector('#bridge-token').value ? await currentConfig() : null;
-  if (cfg) providerStatus.textContent = cfg.hasKey || cfg.keyless ? `Server has a key for ${new URL(cfg.baseUrl).host}. Model: ${cfg.model}.` : 'Enter your API key and click Save provider.';
+  providerStatus.textContent = saved ? (saved.hasKey || saved.keyless ? `Ready: ${p.name} · ${saved.model}.` : 'Paste your API key and click Save provider.') : 'Choose a provider and model, paste your key, then Save provider.';
+  connectBridge();
+  refreshSources();
 })();
