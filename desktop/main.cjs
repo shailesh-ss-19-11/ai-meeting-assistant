@@ -164,6 +164,32 @@ ipcMain.on('overlay-update', (event, state) => {
   if (overlay && !overlay.isDestroyed()) overlay.webContents.send('overlay-update', { channel, ...overlayState[channel] });
 });
 
+// ---- Conversation history (persisted in userData so chats survive restarts) ----
+const MAX_HISTORY = 500;
+const historyFile = () => path.join(app.getPath('userData'), 'conversations.json');
+let history;
+function loadHistory() {
+  if (!history) { try { const data = JSON.parse(fs.readFileSync(historyFile(), 'utf8')); history = Array.isArray(data) ? data : []; } catch { history = []; } }
+  return history;
+}
+const isOverlay = sender => Boolean(overlay && !overlay.isDestroyed() && sender.id === overlay.webContents.id);
+ipcMain.on('history-add', (event, entry) => {
+  if (!isAssistant(event.sender) || !entry || typeof entry !== 'object') return;
+  const text = value => (typeof value === 'string' ? value.slice(0, 20000) : '');
+  const saved = { time: Date.now(), channel: entry.channel === 'screen' ? 'screen' : 'voice', question: text(entry.question), answer: text(entry.answer) };
+  if (!saved.question && !saved.answer) return;
+  const list = loadHistory(); list.push(saved);
+  if (list.length > MAX_HISTORY) list.splice(0, list.length - MAX_HISTORY);
+  try { fs.writeFileSync(historyFile(), JSON.stringify(list), { mode: 0o600 }); } catch { /* history is best-effort */ }
+  if (overlay && !overlay.isDestroyed()) overlay.webContents.send('overlay-history-add', saved);
+});
+ipcMain.handle('overlay-history', event => { if (!isOverlay(event.sender)) throw new Error('Untrusted sender.'); return loadHistory(); });
+// A (possibly corrected) question typed in the assistant window is answered like something heard on the call.
+ipcMain.on('overlay-ask', (event, ask) => {
+  if (!isOverlay(event.sender) || !ask || typeof ask.text !== 'string' || !ask.text.trim()) return;
+  win?.webContents.send('ask-typed', { channel: ask.channel === 'screen' ? 'screen' : 'voice', text: ask.text.trim().slice(0, 15000) });
+});
+
 function senderAllowed(event) { return isAssistant(event.sender); }
 function handle(channel, fn) {
   ipcMain.handle(channel, (event, ...args) => {

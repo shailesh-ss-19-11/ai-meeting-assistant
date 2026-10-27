@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('assistant', {
   overlayListening: on => ipcRenderer.send('overlay-listening', on),
   onToggleListening: callback => ipcRenderer.on('toggle-listening', () => callback()),
   overlayUpdate: state => ipcRenderer.send('overlay-update', state),
+  addHistory: entry => ipcRenderer.send('history-add', entry),
+  onAskTyped: callback => ipcRenderer.on('ask-typed', (_e, ask) => callback(ask)),
   onCaptureShortcut: callback => ipcRenderer.on('capture-shortcut', () => callback()),
   onShortcutUnavailable: callback => ipcRenderer.on('shortcut-unavailable', () => callback())
 });

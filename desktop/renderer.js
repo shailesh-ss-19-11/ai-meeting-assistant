@@ -45,6 +45,7 @@ async function askAssistant(task, { spoken = false } = {}) {
       }
     }
     pushOverlay(channel, { question, answer: raw, state: 'Ready' });
+    window.assistant.addHistory({ channel, question, answer: raw });
   } catch (error) { pushOverlay(channel, { question, error: `Could not get a suggestion: ${error.message}`, state: 'Error' }); message.textContent = error.message; }
   finally { busy[channel] = false; }
 }
@@ -55,6 +56,8 @@ async function queueSpokenAnswer(text) {
   await askAssistant(text, { spoken: true });
   if (pendingSpoken) { const next = pendingSpoken; pendingSpoken = null; queueSpokenAnswer(next); }
 }
+
+window.assistant.onAskTyped(({ channel, text }) => (channel === 'screen' ? askAssistant(text) : queueSpokenAnswer(text)));
 
 // ---- Screen capture (only when the user asks, via the overlay button or the shortcut) ----
 async function captureAndAnswer() {

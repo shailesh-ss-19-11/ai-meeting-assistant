@@ -23,3 +23,10 @@ h3{margin:6px 0 2px;font-size:10px;letter-spacing:.08em;text-transform:uppercase
 .answer pre{background:rgba(255,255,255,.6);border:1px solid rgba(0,0,0,.15);border-radius:8px;padding:8px;overflow:auto;white-space:pre}
 .answer code{font:12px ui-monospace,Menlo,monospace}
 .error{color:#7a0000}
+.ask-form{display:flex;gap:6px;margin:8px 0 0;flex:none}
+.ask-form input{flex:1;min-width:0;font:13px -apple-system,system-ui,sans-serif;color:#000;background:rgba(255,255,255,.75);border:1px solid rgba(0,0,0,.25);border-radius:7px;padding:4px 8px;-webkit-app-region:no-drag}
+.log{flex:0 1 34%;min-height:0;overflow:auto;border-bottom:1px solid rgba(0,0,0,.14);margin-bottom:4px}
+.log:empty{display:none}
+.turn{padding:5px 0;border-bottom:1px solid rgba(0,0,0,.08)}
+.turn .meta{font-size:10px;opacity:.65}.turn .q{margin:2px 0;font-weight:600}.turn .a{white-space:pre-wrap;font-size:13px}
+.turn pre{background:rgba(255,255,255,.6);border-radius:8px;padding:8px;overflow:auto}
