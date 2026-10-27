@@ -19,3 +19,5 @@ input{width:100%;border:1px solid #343849;border-radius:8px;background:#13161f;c
 .answer-section{position:static;margin-bottom:14px}.answer{max-height:180px}
 
 .advanced summary{cursor:pointer;font-weight:600;font-size:12px}.advanced[open] summary{margin-bottom:10px}.advanced textarea{width:100%}#listen-state{color:#7ee0a6}
+
+.test-result{margin:8px 0 0;word-break:break-word}.test-result.pass{color:#5ee08f}.test-result.fail{color:#ff8f8f}

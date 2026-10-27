@@ -89,6 +89,34 @@ window.assistant.onSystemTranscript(text => {
 });
 window.assistant.onSystemAudioStatus(text => { message.textContent = text; });
 
+// Windows: capture what plays through the speakers (the other side of the call) and stream 16 kHz mono PCM to the main process.
+let loopback = null;
+async function startLoopback() {
+  let stream;
+  try { stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true }); }
+  catch (error) { throw new Error(`${error.name || 'Error'}: ${error.message || 'capture was refused'}`); }
+  stream.getVideoTracks().forEach(track => track.stop());
+  const tracks = stream.getAudioTracks();
+  if (!tracks.length) throw new Error('Windows did not provide system audio.');
+  const ctx = new AudioContext({ sampleRate: 16000 });
+  const source = ctx.createMediaStreamSource(new MediaStream(tracks));
+  const processor = ctx.createScriptProcessor(4096, 1, 1);
+  processor.onaudioprocess = event => {
+    const input = event.inputBuffer.getChannelData(0);
+    const pcm = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) pcm[i] = Math.max(-1, Math.min(1, input[i])) * 0x7fff;
+    window.assistant.sendSystemAudio(new Uint8Array(pcm.buffer));
+  };
+  source.connect(processor); processor.connect(ctx.destination);
+  await ctx.resume();
+  loopback = { tracks, ctx };
+}
+window.__startLoopback = startLoopback; // called by the main process (with a user gesture) on Windows
+function stopLoopback() {
+  if (!loopback) return;
+  loopback.tracks.forEach(track => track.stop()); loopback.ctx.close().catch(() => {}); loopback = null;
+}
+
 async function startListening() {
   if (listening || needToken()) return;
   try {
@@ -100,7 +128,7 @@ async function startListening() {
 }
 async function stopListening() {
   if (!listening) return;
-  await window.assistant.stopSystemAudio(); listening = false; pendingSpoken = null; window.assistant.overlayListening(false);
+  stopLoopback(); await window.assistant.stopSystemAudio(); listening = false; pendingSpoken = null; window.assistant.overlayListening(false);
   document.querySelector('#listen-state').classList.add('hidden');
 }
 
@@ -188,6 +216,28 @@ async function saveProvider() {
     return true;
   } catch (error) { providerStatus.textContent = error.message; return false; }
 }
+document.querySelector('#test-provider').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  const result = document.querySelector('#test-result');
+  const show = (text, ok) => { result.textContent = text; result.className = `privacy-note test-result ${ok ? 'pass' : 'fail'}`; };
+  if (needToken()) return;
+  const p = currentProvider();
+  const model = (modelSel.value === CUSTOM ? modelCustom.value : modelSel.value).trim();
+  const key = document.querySelector('#api-key').value.trim();
+  const baseUrl = document.querySelector('#base-url').value.trim();
+  if (!baseUrl) return show('Enter the API base URL.', false);
+  if (!model) return show('Choose or enter a model.', false);
+  button.disabled = true;
+  result.className = 'privacy-note test-result'; result.textContent = 'Testing…';
+  try {
+    const response = await fetch(`${API}/api/test`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ baseUrl, model, apiKey: key || undefined, keyless: Boolean(p.keyless) }) });
+    const body = await response.json().catch(() => ({}));
+    if (body.ok) show(`✓ Working: ${p.name} · ${model} answered in ${(body.ms / 1000).toFixed(1)}s${body.reply ? ` (“${body.reply}”)` : ''}.`, true);
+    else show(`✗ Not working: ${body.error || 'Test failed.'}`, false);
+  } catch (error) { show(`✗ Not working: ${error.message}`, false); }
+  finally { button.disabled = false; }
+});
 document.querySelector('#save-provider').addEventListener('click', async () => {
   if (!(await saveProvider())) return;
   await stopListening();

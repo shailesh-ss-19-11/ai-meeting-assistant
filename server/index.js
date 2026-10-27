@@ -70,6 +70,35 @@ app.post('/api/config', requireBridgeToken, (req, res) => {
   Object.assign(aiConfig, { baseUrl: baseUrl.replace(/\/$/, ''), model: model.trim(), transcriptionModel: transcriptionModel.trim(), keyless: Boolean(keyless) });
   res.json({ ok: true, hasKey: Boolean(aiConfig.apiKey) });
 });
+// Sends one tiny chat request with the values typed in the Setup card (nothing is saved) to prove key + model work.
+app.post('/api/test', requireBridgeToken, async (req, res) => {
+  const { baseUrl, apiKey, model, keyless = false } = req.body ?? {};
+  let url;
+  try { url = new URL(baseUrl); } catch { /* handled below */ }
+  if (!url || !['http:', 'https:'].includes(url.protocol)) return res.status(400).json({ ok: false, error: 'baseUrl must be an http(s) URL.' });
+  if (typeof model !== 'string' || !model.trim() || model.length > 200) return res.status(400).json({ ok: false, error: 'A model name is required.' });
+  if (apiKey !== undefined && (typeof apiKey !== 'string' || apiKey.length > 500)) return res.status(400).json({ ok: false, error: 'Invalid API key.' });
+  // The saved key is only reused for the saved host.
+  const key = apiKey?.trim() || (new URL(aiConfig.baseUrl).origin === url.origin ? aiConfig.apiKey : '');
+  if (!key && !keyless) return res.status(400).json({ ok: false, error: 'Paste your API key first.' });
+  const started = Date.now();
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST', signal: AbortSignal.timeout(20000),
+      headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+      body: JSON.stringify({ model: model.trim(), messages: [{ role: 'user', content: 'Reply with the single word: ok' }], max_tokens: 50 })
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      let detail = text.slice(0, 200);
+      try { const body = JSON.parse(text); detail = String(body.error?.message || body.error || body.message || detail).slice(0, 200); } catch { /* keep raw text */ }
+      return res.json({ ok: false, status: response.status, error: `Provider returned ${response.status}: ${detail}` });
+    }
+    let reply = '';
+    try { const message = JSON.parse(text).choices?.[0]?.message; reply = String(message?.content || message?.reasoning_content || '').trim().slice(0, 100); } catch { /* non-JSON success */ }
+    res.json({ ok: true, reply, ms: Date.now() - started });
+  } catch (error) { res.json({ ok: false, error: error.name === 'TimeoutError' ? 'The provider did not answer within 20 seconds.' : (error.message || 'Could not reach the provider.') }); }
+});
 app.get('/api/models', requireBridgeToken, async (req, res) => {
   // ?baseUrl= previews another provider's public model list; the saved key is only sent to the saved host.
   let base = aiConfig.baseUrl;

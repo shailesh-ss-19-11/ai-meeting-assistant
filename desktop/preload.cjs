@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('assistant', {
   rememberProvider: config => ipcRenderer.invoke('remember-provider', config),
   startSystemAudio: () => ipcRenderer.invoke('start-system-audio'),
   stopSystemAudio: () => ipcRenderer.invoke('stop-system-audio'),
+  platform: process.platform,
+  sendSystemAudio: pcm => ipcRenderer.send('system-audio-pcm', pcm),
   onSystemTranscript: callback => ipcRenderer.on('system-transcript', (_e, text) => callback(text)),
   onSystemAudioStatus: callback => ipcRenderer.on('system-audio-status', (_e, text) => callback(text)),
   overlayListening: on => ipcRenderer.send('overlay-listening', on),

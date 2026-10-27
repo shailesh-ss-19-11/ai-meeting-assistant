@@ -10,7 +10,8 @@
       <label for="model">Model</label><select id="model"></select>
       <input id="model-custom" class="hidden" placeholder="Custom model id" style="margin-top:8px">
       <label for="api-key">API key</label><input id="api-key" type="password" autocomplete="off" placeholder="Paste your API key">
-      <div class="actions"><button id="save-provider" class="primary">Save &amp; start <span>✓</span></button></div>
+      <div class="actions"><button id="test-provider" type="button">Test model &amp; key</button><button id="save-provider" class="primary">Save &amp; start <span>✓</span></button></div>
+      <p class="privacy-note" id="test-result" role="status" aria-live="polite"></p>
       <p class="privacy-note" id="provider-status">Not configured.</p>
     </section>
     <section class="card"><div class="card-heading"><div><h2>Heard on the call</h2><p>Replies appear in the floating assistant window. Use its Capture screen button to read the screen.</p></div><span class="icon">◉</span></div>

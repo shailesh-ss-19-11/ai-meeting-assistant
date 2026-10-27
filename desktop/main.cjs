@@ -50,13 +50,40 @@ async function restoreProvider() {
     body: JSON.stringify({ baseUrl: provider.baseUrl, model: provider.model, transcriptionModel: provider.transcription || '', keyless: Boolean(provider.keyless), apiKey: apiKey || undefined }) }).catch(() => {});
 }
 
+// On Windows the capture exclusion (WDA_EXCLUDEFROMCAPTURE) can be lost when a window is shown, restored or
+// re-created, so it is re-applied on those events. The taskbar button is hidden too, since it is visible when
+// the whole screen is shared.
+//
+// Electron's setContentProtection uses WDA_MONITOR on Windows, which Chrome's screen share draws as a black box.
+// WDA_EXCLUDEFROMCAPTURE (0x11) removes the window from the capture entirely, so it is set through user32 directly.
+let excludeFromCapture = null;
+if (process.platform === 'win32') {
+  try {
+    const setAffinity = require('koffi').load('user32.dll').func('bool __stdcall SetWindowDisplayAffinity(intptr_t hwnd, uint32 affinity)');
+    excludeFromCapture = target => setAffinity(Number(target.getNativeWindowHandle().readBigUInt64LE(0)), 0x11);
+  } catch { /* koffi missing: fall back to Electron's content protection */ }
+}
+function protectWindow(target) {
+  const apply = () => {
+    if (target.isDestroyed()) return;
+    if (excludeFromCapture?.(target)) return;
+    target.setContentProtection(true);
+  };
+  apply();
+  if (process.platform === 'win32') {
+    target.setSkipTaskbar(true);
+    for (const event of ['ready-to-show', 'show', 'restore']) target.on(event, apply);
+    target.webContents.on('did-finish-load', apply);
+  }
+}
+
 function createWindow() {
   win = new BrowserWindow({ width: 440, height: 760, minWidth: 360, minHeight: 560,
     title: 'Meeting Assistant', backgroundColor: '#10131a',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   // Excluded from screen sharing/recording so meeting participants cannot see this window.
-  win.setContentProtection(true);
+  protectWindow(win);
   win.loadFile(path.join(__dirname, 'index.html'));
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
@@ -70,7 +97,7 @@ function createOverlay() {
     frame: false, transparent: true, hasShadow: false, resizable: true, show: false, skipTaskbar: true,
     webPreferences: { preload: path.join(__dirname, 'preload-overlay.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
-  overlay.setContentProtection(true);
+  protectWindow(overlay);
   overlay.setAlwaysOnTop(true, 'screen-saver');
   overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlay.loadFile(path.join(__dirname, 'overlay.html'));
@@ -90,9 +117,20 @@ app.whenReady().then(async () => {
   // Only the assistant window may use the microphone; video and every other permission are denied.
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const audioOnly = details?.mediaTypes?.includes('audio') && !details.mediaTypes.includes('video');
-    callback(Boolean(isAssistant(webContents) && permission === 'media' && audioOnly));
+    // Screen/loopback capture (audio + video request) is only allowed while the app itself is starting it on Windows.
+    const loopbackStart = capturingLoopback && (permission === 'display-capture' || permission === 'media');
+    callback(Boolean(isAssistant(webContents) && ((permission === 'media' && audioOnly) || loopbackStart)));
   });
-  session.defaultSession.setPermissionCheckHandler((webContents, permission) => isAssistant(webContents) && permission === 'media');
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => isAssistant(webContents) && (permission === 'media' || (capturingLoopback && permission === 'display-capture')));
+  // Windows system audio: the assistant window may capture loopback audio (its video track is dropped immediately).
+  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      // Only the assistant window runs capture code (the overlay has none and a strict CSP).
+      if (process.platform !== 'win32' || !win || win.isDestroyed()) return callback({});
+      const [screenSource] = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+      callback({ video: screenSource, audio: 'loopback' });
+    } catch { callback({}); }
+  });
   // No Dock icon, so the app is not visible there while sharing the screen; the windows stay reachable by shortcut.
   app.dock?.hide();
   bridgeToken = loadToken();
@@ -167,6 +205,7 @@ handle('recognize-text', image => {
 
 // System audio (the other side of a call) is captured by a small native helper and transcribed in 8-second chunks.
 let sysAudio = null;
+let capturingLoopback = false;
 function wavFrom(pcm) {
   const header = Buffer.alloc(44);
   header.write('RIFF', 0); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVEfmt ', 8); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20);
@@ -191,19 +230,27 @@ async function transcribeChunk(pcm) {
 }
 function stopSystemAudio() {
   if (!sysAudio) return;
-  clearInterval(sysAudio.timer); clearTimeout(sysAudio.watchdog); sysAudio.child.kill(); sysAudio = null;
+  clearInterval(sysAudio.timer); clearTimeout(sysAudio.watchdog); sysAudio.child?.kill(); sysAudio = null;
 }
-handle('start-system-audio', () => {
+ipcMain.on('system-audio-pcm', (event, data) => {
+  if (!isAssistant(event.sender) || !sysAudio || !(data instanceof Uint8Array)) return;
+  const buffer = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  sysAudio.chunks.push(buffer); sysAudio.received += buffer.length;
+});
+handle('start-system-audio', async () => {
   if (sysAudio) return true;
-  if (process.platform !== 'darwin') throw new Error('System audio capture is only implemented for macOS.');
-  const helper = path.join(__dirname, 'native', 'sysaudio');
-  if (!fs.existsSync(helper)) throw new Error('Native audio helper is missing. Run "npm run build:native" in the desktop folder.');
-  const child = spawn(helper, [], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let child = null;
+  if (process.platform === 'darwin') {
+    const helper = path.join(__dirname, 'native', 'sysaudio');
+    if (!fs.existsSync(helper)) throw new Error('Native audio helper is missing. Run "npm run build:native" in the desktop folder.');
+    child = spawn(helper, [], { stdio: ['ignore', 'pipe', 'pipe'] });
+  } else if (process.platform !== 'win32') throw new Error('System audio capture is only implemented for macOS and Windows.');
+  // On Windows there is no helper: the window captures loopback audio itself and streams 16 kHz mono PCM here.
   const state = { child, chunks: [], received: 0, timer: null, watchdog: null };
   sysAudio = state;
-  child.stdout.on('data', data => { state.chunks.push(data); state.received += data.length; });
-  child.stderr.on('data', data => { const text = String(data).trim(); if (/failed|stopped/.test(text)) win?.webContents.send('system-audio-status', `System audio: ${text}`); });
-  child.on('exit', () => { if (sysAudio === state) { stopSystemAudio(); win?.webContents.send('system-audio-status', 'System audio stopped.'); } });
+  child?.stdout.on('data', data => { state.chunks.push(data); state.received += data.length; });
+  child?.stderr.on('data', data => { const text = String(data).trim(); if (/failed|stopped/.test(text)) win?.webContents.send('system-audio-status', `System audio: ${text}`); });
+  child?.on('exit', () => { if (sysAudio === state) { stopSystemAudio(); win?.webContents.send('system-audio-status', 'System audio stopped.'); } });
   // Cut the audio where the speaker pauses (so sentences stay whole), or after 15 s of continuous speech.
   const BYTES_PER_SECOND = 32000;
   state.timer = setInterval(() => {
@@ -215,7 +262,14 @@ handle('start-system-audio', () => {
     if (process.env.SYSAUDIO_DEBUG) fs.appendFileSync(path.join(app.getPath('userData'), 'audio-debug.log'), `${new Date().toISOString()} bytes=${buffered.length} rms=${Math.round(rms(buffered))}\n`);
     transcribeChunk(buffered).catch(error => win?.webContents.send('system-audio-status', error.message));
   }, 500);
-  state.watchdog = setTimeout(() => { if (!state.received) win?.webContents.send('system-audio-status', 'No system audio received. Allow audio recording for Electron (System Settings → Privacy & Security → Screen & System Audio Recording) and make sure sound is playing.'); }, 6000);
+  if (process.platform === 'win32') {
+    // getDisplayMedia needs a user gesture, which auto-start lacks, so it runs with one granted from here.
+    capturingLoopback = true;
+    try { await win.webContents.executeJavaScript('window.__startLoopback()', true); }
+    catch (error) { stopSystemAudio(); throw new Error(`Could not capture system audio: ${error?.message || JSON.stringify(error)}`); }
+    finally { capturingLoopback = false; }
+  }
+  state.watchdog = setTimeout(() => { if (!state.received) win?.webContents.send('system-audio-status', process.platform === 'win32' ? 'No system audio received. Make sure sound is playing through your speakers or headphones (the meeting must be audible).' : 'No system audio received. Allow audio recording for Electron (System Settings → Privacy & Security → Screen & System Audio Recording) and make sure sound is playing.'); }, 6000);
   return true;
 });
 handle('stop-system-audio', () => { stopSystemAudio(); return true; });

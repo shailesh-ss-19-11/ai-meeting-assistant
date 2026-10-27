@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "ai-meeting-assistant": "file:..",
+    "koffi": "^3.3.4",
     "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
